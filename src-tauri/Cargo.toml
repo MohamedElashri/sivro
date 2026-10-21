@@ -1,0 +1,50 @@
+[package]
+name = "sivro"
+version = "0.1.0"
+description = "Local, read-only desktop explorer for Parquet, CSV, TSV, JSON, JSON Lines, Excel and SQLite"
+authors = ["Mohamed Elashri <git@elashri.com>"]
+edition = "2021"
+rust-version = "1.90"
+
+[lib]
+name = "sivro_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-clipboard-manager = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+same-file = "1"
+# Filesystem free-space checks and cross-platform scratch-directory leases.
+fs2 = "=0.4.3"
+# No `bundled` by default: local + CI builds link prebuilt DuckDB static
+# archives (see scripts/fetch-duckdb.mjs). The `json`/`parquet` features both
+# imply `bundled` (full C++ compile), so they must stay off here.
+duckdb = { version = "1", default-features = false }
+parquet = "55"
+arrow-array = "55"
+arrow-schema = "55"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+# Excel reader: selected-sheet streaming, cached formula values only.
+# No VBA/picture/date features; zip is calamine's own pinned version, used
+# directly to preflight ZIP central directories before parsing.
+calamine = { version = "=0.37.0", default-features = false }
+zip = { version = "=9.0.5", default-features = false }
+# SQLite reader: bundled SQLite for one engine version on every
+# target; `hooks` only for the read-only authorizer. No extension loading.
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "hooks"] }
+
+[features]
+default = []
+# Compile DuckDB from source instead of linking prebuilt static archives.
+# Required on Windows MSVC (official static-libs archives are MinGW-only);
+# also the fallback anywhere if the prebuilt archives fail to link.
+# Bundled DuckDB compiles only the extensions requested here (plus
+# core_functions); Parquet must be listed or Windows builds cannot read it.
+source-bundled = ["duckdb/bundled", "duckdb/json", "duckdb/parquet"]

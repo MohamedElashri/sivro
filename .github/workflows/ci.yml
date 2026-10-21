@@ -1,0 +1,119 @@
+name: PR checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend build and regressions
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+      - run: make frontend test-frontend
+
+  rust:
+    name: Linux Rust checks and library checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+            experiments/library-checks -> target
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential file libayatana-appindicator3-dev \
+            libgtk-3-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev \
+            librsvg2-dev patchelf unzip xdg-utils
+      - run: make fmt-check
+      - run: make lint
+      - run: make test-backend
+      - run: make test-libs
+      - run: git diff --exit-code
+
+  gui-e2e:
+    name: Linux GUI end-to-end (all seven formats, online and offline)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Install native, WebDriver and virtual-display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential file libayatana-appindicator3-dev \
+            libgtk-3-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev \
+            librsvg2-dev patchelf unzip xdg-utils webkit2gtk-driver xvfb
+      - run: cargo install tauri-driver --locked
+      - run: make app
+      - run: xvfb-run -a make test-e2e
+      # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor;
+      # the offline run needs one for its loopback-only network namespace.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: xvfb-run -a make test-e2e-offline
+
+  platforms:
+    name: Backend tests on ${{ matrix.name }}
+    # Cross-platform reader suites: on main and on demand (DuckDB compiles from
+    # source on Windows, which is too slow for every pull request).
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS ARM64
+            runner: macos-14
+            features: ""
+          - name: Windows x86_64
+            runner: windows-2025
+            features: --features source-bundled
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Run backend tests
+        if: runner.os != 'Windows'
+        run: make test-backend
+      - name: Run backend tests (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          npm ci
+          npm run build
+          cargo test --locked --manifest-path src-tauri/Cargo.toml ${{ matrix.features }}
