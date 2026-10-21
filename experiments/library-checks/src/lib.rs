@@ -77,7 +77,7 @@ mod tests {
         ] {
             let path = dir.path().join(filename);
             // Generated temp path only; production needs the export guards in
-            // docs/architecture.md. This is not a production query compiler.
+            // src-tauri/src/export.rs. This is not a production query compiler.
             let quoted = path.to_str().unwrap().replace('\'', "''");
             conn.execute_batch(&format!(
                 "COPY (SELECT range::BIGINT AS id FROM range(2)) TO '{quoted}' ({options})"

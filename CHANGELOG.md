@@ -51,7 +51,7 @@ First release of Sivro, a local, read-only desktop explorer for tabular data.
 - Fully offline: bundled Inter and JetBrains Mono fonts (OFL-1.1), a content
   security policy limited to the app and Tauri IPC, and private bundled
   SQLite/DuckDB symbols on Linux.
-- Packages include `LICENSE` and a generated `THIRD_PARTY_NOTICES.md`.
+- Packages include `LICENSE`.
 
 ### Testing and release
 
@@ -59,7 +59,7 @@ First release of Sivro, a local, read-only desktop explorer for tabular data.
   hostile inputs, resource limits, cancellation and repeated open/close;
   frontend tests with mocked IPC; library checks for DuckDB, Calamine and
   rusqlite; and GUI end-to-end tests of the built app, including a run with no
-  network. A 1M-row performance baseline is recorded in `docs/testing.md`.
+  network. A 1M-row performance baseline is available as `make perf`.
 - Releases run backend tests on every target before packaging and GUI tests
   on Linux x86_64, publish `SHA256SUMS.txt`, and require approval before
   publishing. ARM64 Linux and Windows builds are experimental.

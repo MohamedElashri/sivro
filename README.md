@@ -39,8 +39,20 @@ it. Set `SIVRO_VERSION=v0.1.0` to pin a release.
 | macOS (Intel and Apple Silicon) | universal `.dmg` |
 | Linux x86_64 | `.deb`, `.rpm` or `.AppImage` |
 
-Packages are not code-signed. On macOS, allow the app under System Settings →
-Privacy & Security on first launch; on Windows, SmartScreen may warn.
+> [!NOTE]
+> **macOS:** the app is not signed with an Apple Developer ID or notarized, so
+> macOS blocks a downloaded copy ("Sivro is damaged" or "cannot be opened").
+> After moving it to Applications, allow it with:
+>
+> ```sh
+> xattr -dr com.apple.quarantine /Applications/Sivro.app
+> ```
+>
+> or open it once and choose **Open Anyway** under System Settings → Privacy &
+> Security. The install script does this for you.
+>
+> **Windows:** the installer is not code-signed either, so SmartScreen may
+> warn; choose **More info → Run anyway**.
 
 ## Usage
 
@@ -71,10 +83,8 @@ make help     # list every target
 
 CI lints with the latest stable Rust, so run `rustup update stable` first. On
 Windows the Makefile builds DuckDB from source automatically. See
-[development](docs/development.md), [testing](docs/testing.md),
-[architecture](docs/architecture.md) and [releasing](docs/releasing.md).
+[development](docs/development.md) for architecture, tests and releasing.
 
 ## License
 
-[MIT](LICENSE). Bundled third-party licenses are listed in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE).

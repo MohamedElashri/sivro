@@ -235,7 +235,7 @@ jobs:
     if: needs.create-release.outputs.release_draft == 'true'
     runs-on: ubuntu-22.04
     # Configure required reviewers for this environment: publishing waits for
-    # the manual macOS/Windows smoke checklist in docs/releasing.md.
+    # the manual macOS/Windows smoke checklist in docs/development.md.
     environment: release
     steps:
       - name: Attach SHA-256 checksums

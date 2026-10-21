@@ -57,6 +57,8 @@ case "$asset" in
     rm -rf /Applications/Sivro.app
     cp -R "$tmp/mnt/Sivro.app" /Applications/
     hdiutil detach -quiet "$tmp/mnt"
+    # The app is not notarized; drop the download quarantine so it opens.
+    xattr -dr com.apple.quarantine /Applications/Sivro.app 2>/dev/null || true
     echo "Installed /Applications/Sivro.app" ;;
   *.deb) sudo apt-get install -y "$file" ;;
   *.rpm)

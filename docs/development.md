@@ -1,9 +1,11 @@
 # Development
 
-Use Node.js 24 and npm, GNU Make, and the latest stable Rust with `rustfmt`
-and `clippy` (the locked Tauri version needs Rust 1.90 or newer; CI lints with
-the latest stable). Building also needs a C compiler, for the bundled SQLite.
-On Debian/Ubuntu, install the native dependencies first:
+## Setup
+
+You need Node.js 24, GNU Make, a C compiler and the latest stable Rust with
+`rustfmt` and `clippy` (CI lints with the latest stable), plus the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). On
+Debian/Ubuntu:
 
 ```sh
 sudo apt-get install build-essential file libayatana-appindicator3-dev \
@@ -13,75 +15,92 @@ rustup update stable && rustup component add rustfmt clippy
 make dev
 ```
 
-If Homebrew's `pkg-config` comes first on `PATH` and cannot find the system
-GTK/WebKit libraries, set `PKG_CONFIG=/usr/bin/pkg-config`. The first build
-downloads dependencies and DuckDB archives; later builds can run offline.
+If Homebrew's `pkg-config` shadows the system one, set
+`PKG_CONFIG=/usr/bin/pkg-config`. The first build downloads dependencies and
+DuckDB archives; later builds work offline.
 
 ## Make targets
 
-The Makefile wraps every build and check, and CI runs the same targets.
-`make help` lists them.
+CI runs the same targets; `make help` lists them all.
 
 | Target | Does |
 |---|---|
 | `make dev` | Run the app with hot reload |
-| `make build` | Build release packages |
-| `make app` | Build the release binary only (for the GUI tests) |
+| `make build` / `make app` | Release packages / release binary only |
 | `make check` | Typecheck the frontend and Rust code |
 | `make fmt` / `make fmt-check` | Format Rust code / check formatting |
-| `make lint` | Clippy on the app and library checks, warnings denied |
+| `make lint` | Clippy on all crates, warnings denied |
 | `make test` | Frontend and backend tests |
-| `make test-libs` | Library checks |
+| `make test-libs` | Library checks (`experiments/library-checks`) |
 | `make test-e2e` / `make test-e2e-offline` | GUI suite against `make app` (Linux) |
 | `make ci` | `fmt-check`, `lint`, `test` and `test-libs` |
 | `make perf` | 1M-row performance baseline |
-| `make notices` | Regenerate `THIRD_PARTY_NOTICES.md` |
 | `make clean` / `make distclean` | Remove build outputs / also dependencies and DuckDB archives |
 
-GUI end-to-end tests drive the real built app through WebDriver. They need
-`tauri-driver` (`cargo install tauri-driver --locked`) and WebKitGTK's
-`WebKitWebDriver` (Debian/Ubuntu: `webkit2gtk-driver`), and open windows on
-the current display. [Testing](testing.md) describes every suite;
-[releasing](releasing.md) describes the release gates. CI runs formatting,
-clippy, the frontend, backend and library tests, and the Linux GUI suite on
-every pull request, plus the macOS and Windows backend suites on `main`.
+## Architecture
 
-## DuckDB linking
+A Tauri 2 app: a Rust backend in `src-tauri/src` and a vanilla
+TypeScript/Vite frontend in `src`.
 
-Use the build wrapper: `scripts/with-duckdb.mjs` stages official
-prebuilt static DuckDB archives on Linux/macOS via `scripts/fetch-duckdb.mjs`.
-The version comes from `libduckdb-sys` in `src-tauri/Cargo.lock`. Native DuckDB
-1.5.6 corresponds to Rust crate 1.10506.0. `src-tauri/build.rs` links the engine,
-extension loader, bundled extension archives and platform libraries. Generated
-archives, link configuration and build outputs are ignored by Git.
+- **Sessions** (`sessions.rs`): each open file owns its fingerprint, frozen
+  options and schema, a generation number, one serialized execution lane and
+  a scratch directory. At most two expensive operations run at once; a 30 s
+  budget interrupts native work, and refresh or close invalidates the
+  generation so late replies are dropped.
+- **Readers** (`adapters/`): Parquet, CSV/TSV, JSON/JSONL record tables and
+  Excel run on DuckDB through the `TableSource` trait; JSON and Excel data is
+  first staged into session scratch (`stage.rs`). JSON documents use a bounded
+  in-memory tree. SQLite uses its own read-only rusqlite connection with an
+  authorizer that allows only reads.
+- **Queries** (`query/`): the frontend sends typed filters, column IDs, sorts
+  and paging, never SQL. Rust compiles them with allow-listed identifiers and
+  bound values, separately for DuckDB and SQLite.
+- **Exact values:** cells are tagged, and integers and decimals cross IPC as
+  text. JSON keeps raw serde_json tokens (`arbitrary_precision`).
+- **Exports** (`export.rs`) are staged beside the destination and published
+  with a no-clobber hard link; sources and their aliases are refused.
+- **Limits** live in `policy.rs`: page sizes, 1 GiB scratch per session,
+  512 MiB DuckDB memory, 200,000 Excel cells, 32 MiB JSON documents and a
+  10,000,000-row export cap.
+- **Offline:** fonts are bundled, the CSP allows only the app and Tauri IPC,
+  DuckDB auto-install is off, and on Linux bundled SQLite/DuckDB symbols stay
+  private (`-Wl,--exclude-libs,ALL`).
 
-Windows MSVC must build from source because DuckDB's official prebuilt Windows
-archives use MinGW. The Makefile adds `--features source-bundled` on Windows;
-without Make, pass it to Tauri and Cargo yourself.
+DuckDB is engine 1.5.6 (`libduckdb-sys` 1.10506.0). `scripts/with-duckdb.mjs`
+stages the official static archives on Linux and macOS
+(`DUCKDB_TRIPLE=universal-apple-darwin` merges both macOS architectures).
+Windows MSVC compiles DuckDB from source with `--features source-bundled`,
+which the Makefile adds automatically.
 
-`source-bundled` enables DuckDB's `bundled`, `json` and `parquet` features:
-bundled builds compile only the extensions requested (plus `core_functions`).
-Do not add these features to the default build; they force source
-compilation and change the static-archive link strategy.
+## Tests
 
-## Library checks
+- **Frontend** (`tests/frontend.test.mjs`): mocked IPC, stale replies,
+  dialogs, filters and exports.
+- **Backend** (`src-tauri/src/tests`): every reader end to end, five-format
+  export round trips, precision fixtures, hostile inputs, resource limits,
+  cancellation, refresh and read-only guarantees.
+- **Library checks:** isolated checks of the DuckDB, Calamine and rusqlite
+  behaviour the readers rely on.
+- **GUI** (`tests/e2e/run.mjs`): the built app through `tauri-driver` and
+  `WebKitWebDriver` (`webkit2gtk-driver`), one file per format, online and
+  inside a loopback-only network namespace. Use `xvfb-run -a` when headless;
+  Ubuntu 24.04 needs `kernel.apparmor_restrict_unprivileged_userns=0` for the
+  offline run.
 
-The separate [library-checks crate](../experiments/library-checks/README.md) pins
-down library behaviour the readers rely on: raw JSON numeric fidelity,
-array/JSONL output, DuckDB interruption, selected-sheet Calamine access and
-read-only rusqlite WAL semantics.
+Fixtures are synthetic. On a Ryzen 7 7735H, 1M-row sources open in 14 ms
+(Parquet), ~200 ms (CSV/TSV) and ~5–6 s (JSON/JSONL, which are staged), with
+peak memory under 350 MiB.
 
-Run them with `make test-libs`.
+## Releasing
 
-See [architecture](architecture.md), [testing](testing.md) and the
-[changelog](../CHANGELOG.md) for design decisions, test coverage and limitations.
-
-## Third-party notices
-
-Packages include `LICENSE` and [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md):
-the license of every bundled Rust crate (for all release targets) and npm
-package, the DuckDB 1.5.6 engine and its statically linked components
-(including ICU and jemalloc), and SQLite 3.53.2 (public domain). The bundled
-Inter and JetBrains Mono fonts are under the SIL Open Font License 1.1.
-Regenerate the notices with `node scripts/third-party-notices.mjs` after any
-dependency change. Excel and other test fixtures are synthetic.
+1. Set the version in `package.json`, `package-lock.json`,
+   `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` and
+   `src-tauri/tauri.conf.json`; update `CHANGELOG.md` and
+   `docs/release-notes.md`.
+2. Run `make ci build app test-e2e test-e2e-offline`.
+3. Push a `vX.Y.Z` tag. `release.yml` creates a draft release, runs the
+   backend tests on every target, builds Linux x86_64, Windows x86_64 and a
+   universal macOS app (ARM64 Linux/Windows are experimental), runs the GUI
+   suite on Linux, attaches `SHA256SUMS.txt` and publishes from the `release`
+   environment. Add required reviewers to that environment to hold
+   publication for manual macOS and Windows checks.

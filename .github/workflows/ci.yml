@@ -1,9 +1,15 @@
 name: PR checks
 
+# Documentation-only changes skip CI; a change that also touches code runs it.
 on:
   pull_request:
+    paths-ignore: &docs
+      - "**.md"
+      - "docs/**"
+      - LICENSE
   push:
     branches: [main]
+    paths-ignore: *docs
   workflow_dispatch:
 
 permissions:

@@ -11,13 +11,27 @@ ifeq ($(OS),Windows_NT)
 FEATURES   ?= --features source-bundled
 endif
 
+# On Linux, a Homebrew pkg-config earlier on PATH cannot see the system
+# GTK/WebKit libraries. When that happens, put the system one first on PATH
+# (the AppImage bundler calls `pkgconf`/`pkg-config` directly) and in PKG_CONFIG.
+ifeq ($(shell uname -s 2>/dev/null),Linux)
+ifneq ($(shell pkg-config --exists gtk+-3.0 2>/dev/null || echo missing),)
+ifeq ($(shell /usr/bin/pkg-config --exists gtk+-3.0 2>/dev/null && echo ok),ok)
+SHIM := $(CURDIR)/src-tauri/target/pkg-config-shim
+$(shell mkdir -p $(SHIM) && ln -sf /usr/bin/pkg-config $(SHIM)/pkg-config && ln -sf /usr/bin/pkg-config $(SHIM)/pkgconf)
+export PATH := $(SHIM):$(PATH)
+export PKG_CONFIG := /usr/bin/pkg-config
+endif
+endif
+endif
+
 DEPS       := node_modules/.package-lock.json
 DIST       := dist/index.html
 
 .DEFAULT_GOAL := help
 .PHONY: help install dev build app frontend check fmt fmt-check lint test \
         test-frontend test-backend test-libs test-e2e test-e2e-offline ci \
-        perf notices clean distclean
+        perf clean distclean
 
 help: ## List targets
 	@grep -hE '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-17s %s\n", $$1, $$2}'
@@ -77,9 +91,6 @@ ci: fmt-check lint test test-libs ## Run every check CI runs, except the GUI sui
 
 perf: ## Measure the 1M-row performance baseline
 	node scripts/perf-baseline.mjs
-
-notices: $(DEPS) ## Regenerate THIRD_PARTY_NOTICES.md
-	node scripts/third-party-notices.mjs
 
 clean: ## Remove build outputs
 	rm -rf dist src-tauri/target experiments/library-checks/target
