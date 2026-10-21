@@ -1,0 +1,20 @@
+[package]
+name = "sivro-library-checks"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+license = "MIT"
+
+# Deliberately isolated from the application: these are API/semantics spikes,
+# not production adapters. Keep DuckDB aligned with src-tauri/Cargo.lock.
+[dependencies]
+duckdb = { version = "=1.10506.0", default-features = false }
+calamine = { version = "=0.37.0", default-features = false }
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+serde_json = { version = "=1.0.151", features = ["arbitrary_precision"] }
+tempfile = "=3.27.0"
+zip = { version = "=9.0.5", default-features = false }
+
+[features]
+source-bundled = ["duckdb/bundled", "duckdb/json"]
