@@ -22,6 +22,8 @@ concurrency:
 jobs:
   frontend:
     name: Frontend build and regressions
+    # Release commits are pushed with their tag; release.yml runs every check.
+    if: &not-release "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: Release v')"
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -33,6 +35,7 @@ jobs:
 
   rust:
     name: Linux Rust checks and library checks
+    if: *not-release
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -62,6 +65,7 @@ jobs:
 
   gui-e2e:
     name: Linux GUI end-to-end (all seven formats, online and offline)
+    if: *not-release
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -91,7 +95,7 @@ jobs:
     name: Backend tests on ${{ matrix.name }}
     # Cross-platform reader suites: on main and on demand (DuckDB compiles from
     # source on Windows, which is too slow for every pull request).
-    if: github.event_name != 'pull_request'
+    if: "github.event_name == 'workflow_dispatch' || github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'chore: Release v')"
     strategy:
       fail-fast: false
       matrix:

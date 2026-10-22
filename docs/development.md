@@ -117,8 +117,22 @@ peak memory under 350 MiB.
    builds run it automatically, and release CI additionally requires the tag
    to equal `vX.Y.Z` before creating a draft or building packages.
 2. Run `make ci build app test-e2e test-e2e-offline`.
-3. Push a `vX.Y.Z` tag. `release.yml` creates a draft release, runs the
-   backend tests on every target, builds Linux x86_64, Windows x86_64 and a
+3. Commit the version and changelog as `chore: Release vX.Y.Z`, tag it, and
+   push both together:
+
+   ```sh
+   git commit -am "chore: Release vX.Y.Z"
+   git tag vX.Y.Z
+   git push --atomic origin main vX.Y.Z
+   ```
+
+   `ci.yml` skips pushes whose head commit starts with `chore: Release v`,
+   since the release workflow runs every check on the tagged commit. Use that
+   prefix only for release commits, and push other unpushed commits first so
+   CI still checks them. Do not use `[skip ci]`; it can also skip the tag's
+   release workflow.
+
+   `release.yml` creates a draft release, runs the backend tests on every target, builds Linux x86_64, Windows x86_64 and a
    universal macOS app (ARM64 Linux/Windows are experimental), runs the GUI
    suite on Linux, assembles and validates `latest.json`, attaches
    `SHA256SUMS.txt` and publishes from the `release`
