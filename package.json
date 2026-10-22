@@ -4,7 +4,11 @@
   "version": "0.1.1",
   "type": "module",
   "scripts": {
+    "version": "npm run version:sync",
+    "version:sync": "node scripts/version.mjs --write",
+    "version:check": "node scripts/version.mjs",
     "dev": "vite --host 127.0.0.1",
+    "prebuild": "npm run version:check",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test:frontend": "node --test tests/frontend.test.mjs tests/updates.test.mjs tests/release.test.mjs tests/appearance.test.mjs",

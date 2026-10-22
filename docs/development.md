@@ -104,12 +104,18 @@ peak memory under 350 MiB.
 
 ## Releasing
 
-1. Set the version in `package.json`, `package-lock.json`,
-   `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` and
-   `src-tauri/tauri.conf.json`; update `CHANGELOG.md` under a `## X.Y.Z`
-   heading. That section supplies the GitHub release notes.
-   `node scripts/check-release-version.mjs` verifies that all five version
-   sources agree.
+1. `package.json` is the only version source. Run
+   `npm version X.Y.Z --no-git-tag-version` to set it; the version lifecycle
+   hook runs `npm run version:sync` to update Cargo and lockfile metadata.
+   If editing `package.json` directly, run `npm run version:sync` afterward.
+   Tauri reads `../package.json` directly using its
+   [version-file support](https://v2.tauri.app/reference/config/#version).
+   Commit the generated metadata;
+   do not edit its versions by hand. Update `CHANGELOG.md` under a `## X.Y.Z`
+   heading; that section supplies the GitHub release notes.
+   `npm run version:check` checks metadata without changing files. Frontend
+   builds run it automatically, and release CI additionally requires the tag
+   to equal `vX.Y.Z` before creating a draft or building packages.
 2. Run `make ci build app test-e2e test-e2e-offline`.
 3. Push a `vX.Y.Z` tag. `release.yml` creates a draft release, runs the
    backend tests on every target, builds Linux x86_64, Windows x86_64 and a

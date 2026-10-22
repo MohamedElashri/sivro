@@ -3,6 +3,7 @@
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { syncVersion } from "./version.mjs";
 
 export function createManifest({ version, tag, repository, notes, publicKey, files, now = new Date().toISOString() }) {
   if (tag !== `v${version}` || !/^\d+\.\d+\.\d+$/.test(version)) throw new Error("A stable release tag must match the app version");
@@ -52,9 +53,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (!directory || !releaseFile || !output) throw new Error("Usage: node scripts/create-update-manifest.mjs ASSETS RELEASE_JSON OUTPUT");
   const config = JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
   const release = JSON.parse(readFileSync(releaseFile, "utf8"));
+  const { version } = syncVersion(fileURLToPath(new URL("../", import.meta.url)), { tag: release.tag_name });
   // Read signatures only; installer files may be hundreds of megabytes.
   const files = Object.fromEntries(readdirSync(directory).map((name) => [name, name.endsWith(".sig") ? readFileSync(join(directory, name), "utf8") : null]));
-  const manifest = createManifest({ version: config.version, tag: release.tag_name, repository: process.env.GITHUB_REPOSITORY, notes: release.body ?? "", publicKey: config.plugins.updater.pubkey, files });
+  const manifest = createManifest({ version, tag: release.tag_name, repository: process.env.GITHUB_REPOSITORY, notes: release.body ?? "", publicKey: config.plugins.updater.pubkey, files });
   writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`Validated signed updater assets: ${Object.keys(manifest.platforms).join(", ")}`);
 }

@@ -31,6 +31,11 @@ jobs:
         with:
           ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
       - name: Verify updater signing is configured
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -41,10 +46,10 @@ jobs:
             exit 1
           fi
 
-      - name: Verify release version
+      - name: Verify canonical version, generated metadata and release tag
         env:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
-        run: node scripts/check-release-version.mjs
+        run: npm run version:check
 
       - name: Extract release notes from changelog
         env:

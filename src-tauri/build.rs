@@ -1,4 +1,6 @@
 fn main() {
+    // Tauri resolves its version from this file, including on incremental builds.
+    println!("cargo:rerun-if-changed=../package.json");
     tauri_build::build();
 
     // Keep statically linked engines private on Linux. Without this, ELF

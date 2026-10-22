@@ -25,6 +25,8 @@
 - Release builds now generate signed updater assets. Publication validates
   the required platform assets and creates one complete `latest.json` after
   all platform builds finish, with installer-specific Windows entries.
+- Centralized the app version in `package.json`, with generated Cargo and
+  lockfile metadata and CI checks for mismatches and incorrect release tags.
 - **Upgrade from 0.1.0:** install 0.1.1 manually; 0.1.0 has no updater.
 
 ### Known limitations
