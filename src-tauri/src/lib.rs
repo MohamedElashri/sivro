@@ -260,8 +260,12 @@ struct AppMetadata {
 fn app_metadata(app: tauri::AppHandle) -> AppMetadata {
     // Linux's updater replaces the running AppImage. deb/rpm and source
     // builds must use their package manager or the release downloads.
-    let supported =
-        !cfg!(debug_assertions) && (!cfg!(target_os = "linux") || app.env().appimage.is_some());
+    // `Env::appimage` only exists on Linux targets.
+    #[cfg(target_os = "linux")]
+    let installable = app.env().appimage.is_some();
+    #[cfg(not(target_os = "linux"))]
+    let installable = true;
+    let supported = !cfg!(debug_assertions) && installable;
     AppMetadata {
         version: app.package_info().version.to_string(),
         author: "Mohamed Elashri",

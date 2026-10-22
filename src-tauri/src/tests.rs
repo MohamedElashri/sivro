@@ -746,6 +746,7 @@ async fn export_aliases_collisions_and_nonfinite_json_fail_without_source_writes
     std::fs::hard_link(&source, &hard).unwrap();
     let other = dir.0.join("other.parquet");
     std::fs::write(&other, b"keep").unwrap();
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut paths = vec![source.clone(), hard, other.clone()];
     #[cfg(unix)]
     {
