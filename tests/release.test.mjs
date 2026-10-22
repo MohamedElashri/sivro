@@ -58,7 +58,7 @@ test("one version edit synchronizes metadata without touching dependencies", (t)
   assert.deepEqual(lock, originalLock, "npm dependency metadata must be preserved");
   const previous = readVersion();
   assert.equal(fixture.read("src-tauri/Cargo.toml"), originalCargo.replace(`version = "${previous}"`, 'version = "12.34.56"'));
-  assert.equal(fixture.read("src-tauri/Cargo.lock"), originalCargoLock.replace(`name = "sivro"\nversion = "${previous}"`, 'name = "sivro"\nversion = "12.34.56"'));
+  assert.equal(fixture.read("src-tauri/Cargo.lock"), originalCargoLock.replace(new RegExp(`(name = "sivro"\\r?\\n)version = "${previous}"`), '$1version = "12.34.56"'));
   assert.equal(JSON.parse(fixture.read("src-tauri/tauri.conf.json")).version, "../package.json");
   const synchronized = fixture.snapshot();
   assert.deepEqual(syncVersion(fixture.directory, { write: true }).changedFiles, []);
@@ -74,7 +74,7 @@ test("release validation rejects drift in each mirror and Tauri's version source
       const json = JSON.parse(original); json.version = "9.9.9";
       fixture.write(filename, JSON.stringify(json));
     } else if (filename.endsWith("Cargo.lock")) {
-      fixture.write(filename, original.replace(`name = "sivro"\nversion = "${readVersion()}"`, 'name = "sivro"\nversion = "9.9.9"'));
+      fixture.write(filename, original.replace(new RegExp(`(name = "sivro"\\r?\\n)version = "${readVersion()}"`), '$1version = "9.9.9"'));
     } else {
       fixture.write(filename, original.replace(`version = "${readVersion()}"`, 'version = "9.9.9"'));
     }
