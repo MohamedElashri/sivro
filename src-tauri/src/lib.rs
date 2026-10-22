@@ -245,11 +245,46 @@ fn open_external_blocking(path: &str) -> Result<(), String> {
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppMetadata {
+    version: String,
+    author: &'static str,
+    platform: &'static str,
+    arch: &'static str,
+    update_supported: bool,
+    update_hint: &'static str,
+}
+
+#[tauri::command]
+fn app_metadata(app: tauri::AppHandle) -> AppMetadata {
+    // Linux's updater replaces the running AppImage. deb/rpm and source
+    // builds must use their package manager or the release downloads.
+    let supported =
+        !cfg!(debug_assertions) && (!cfg!(target_os = "linux") || app.env().appimage.is_some());
+    AppMetadata {
+        version: app.package_info().version.to_string(),
+        author: "Mohamed Elashri",
+        platform: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+        update_supported: supported,
+        update_hint: if cfg!(debug_assertions) {
+            "Built-in installation is unavailable in development builds."
+        } else if cfg!(target_os = "linux") {
+            "Built-in installation on Linux requires running the AppImage."
+        } else {
+            ""
+        },
+    }
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let root = app.path().app_cache_dir()?.join("scratch-v1");
             let state = AppState::new(root, policy::ResourcePolicy::default())?;
@@ -261,6 +296,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_metadata,
             probe_file,
             preview_delimited,
             discard_preview,

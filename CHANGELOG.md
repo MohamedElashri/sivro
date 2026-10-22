@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.1.1
+
+- Replaced the warm-paper theme with contrast-adjusted Catppuccin Latte
+  (light) and Mocha (dark), with saved Light/Dark/System appearance controls
+  and live system-theme changes. Updated the grid, dialogs, sidebar, buttons,
+  scrollbars, focus outlines, and semantic status colors in both modes.
+- Rebuilt dropdown popups with visible pointer and keyboard highlights,
+  selected-item checkmarks, arrow/Home/End navigation, typeahead and Escape
+  dismissal. Sheet and database lists now have hover and selected states.
+- Fixed duplicate Linux file pickers by initializing event handlers once,
+  preventing overlapping picker requests and ignoring repeated open shortcuts.
+- Added a Sublime-style filled tab dot for unapplied search/filter changes;
+  a separate warning marks sources changed on disk. Sources remain read-only.
+- Added About with the running app version, author, platform, MIT license,
+  source code, releases, issue tracker and author website.
+- Added manual GitHub update checks, release notes, explicit installation
+  confirmation, download progress, signature and signed-version verification,
+  error recovery and an explicit restart action on macOS/Linux. Windows
+  launches its installer and restarts after the user confirms installation.
+  No checks, downloads or installations run automatically.
+- Built-in updates support macOS, Windows and Linux AppImage. Other Linux
+  packages and development builds offer checks and release download links.
+- Release builds now generate signed updater assets. Publication validates
+  the required platform assets and creates one complete `latest.json` after
+  all platform builds finish, with installer-specific Windows entries.
+- **Upgrade from 0.1.0:** install 0.1.1 manually; 0.1.0 has no updater.
+
+### Known limitations
+
+- This is a pre-1.0 beta. Verify downloads against `SHA256SUMS.txt`.
+  Updater signatures do not provide Apple notarization or Windows
+  Authenticode signing; macOS and Windows may warn on first launch.
+- Automated GUI coverage is Linux x86_64; macOS and Windows GUI checks
+  are manual. Required targets run backend tests before packaging. macOS
+  ships a universal app; ARM64 Linux and Windows builds are experimental.
+- JSON/JSON Lines tables scan the whole input when opening; inputs taking
+  longer than 30 seconds are refused. See [Formats and behaviour](docs/formats.md)
+  for format-specific limits, including Excel cached values, SQLite WAL
+  sidecars and exact export types.
+- Windows may refuse to delete or replace an open source file. Close its
+  tab before another program rewrites it.
+- Resource budgets for pages, exports, scratch space and DuckDB are not
+  a hard cap on the app's total memory.
+
 ## 0.1.0
 
 First release of Sivro, a local, read-only desktop explorer for tabular data.

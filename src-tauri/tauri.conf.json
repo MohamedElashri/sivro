@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Sivro",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "io.github.mohamedelashri.sivro",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -46,6 +46,19 @@
       "../LICENSE": "LICENSE"
     },
     "shortDescription": "Local desktop explorer for Parquet, CSV, TSV, JSON, JSON Lines, Excel and SQLite",
-    "longDescription": "Sivro explores local Parquet, CSV, TSV, JSON, JSON Lines, Excel (xlsx, xlsm, xlsb, xls) and SQLite files with parsing previews, worksheet and table selection, exact-number JSON document inspection, schema inspection, a paged grid, filtering, sorting, column profiles, and Parquet, CSV, TSV, JSON array and JSON Lines exports."
+    "longDescription": "Sivro explores local Parquet, CSV, TSV, JSON, JSON Lines, Excel (xlsx, xlsm, xlsb, xls) and SQLite files with parsing previews, worksheet and table selection, exact-number JSON document inspection, schema inspection, a paged grid, filtering, sorting, column profiles, and Parquet, CSV, TSV, JSON array and JSON Lines exports.",
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFMDNERDJFNzUzNTMzOEUKUldTT016VjFMdDBETGdTaHN4L3NvR3dRdjcwcUIyWnNHSUNpY2UvSVErbHY3YkNiSnk1b0VCM0cK",
+      "endpoints": [
+        "https://github.com/MohamedElashri/sivro/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      },
+      "requireSignedVersion": true
+    }
   }
 }

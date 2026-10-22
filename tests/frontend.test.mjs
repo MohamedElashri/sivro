@@ -12,7 +12,7 @@ function frontend(options = {}) {
   let nextOperation = 0;
   const context = vm.createContext({
     navigator: { userAgent: "Mac" }, localStorage: { getItem: () => null, setItem() {} },
-    document: { readyState: "loading", addEventListener() {}, getElementById: () => null, querySelector: () => null },
+    document: { readyState: options.readyState ?? "loading", addEventListener() {}, getElementById: () => null, querySelector: () => null },
     performance, TextEncoder, setTimeout: () => 0, clearTimeout() {}, console,
   });
   function load(name) {
@@ -30,6 +30,8 @@ function frontend(options = {}) {
         openExcel, changeExcel, confirmExcel, cancelExcel, renderExcel: require("./excel").renderExcel, getExcelDialog() { return excelDialog; },
         openSqlite, changeSqlite, confirmSqlite, cancelSqlite, renderSqlite: require("./sqlite").renderSqlite, getSqliteDialog() { return sqliteDialog; },
         getDialog() { return delimitedDialog; },
+        openAbout, closeAbout, updates, renderTitlebar, chooseAndOpenFile, init, hasPendingView, renderTabStrip,
+        getAppMetadata() { return appMetadata; }, getAboutOpen() { return aboutOpen; },
         useTab(tab) { tabs = [tab]; activePath = tab.info.path; },
         useTabs(values, active) { tabs = values; activePath = active; },
         getTabs() { return tabs; }, getLastExport() { return lastExport; },
@@ -43,10 +45,14 @@ function frontend(options = {}) {
           if (command === "cancel_operation") return Promise.resolve({ status: "cancel_pending" });
           if (command === "discard_preview") return Promise.resolve();
           if (command === "close_dataset") return Promise.resolve({ closed: true });
+          if (command === "app_metadata") return Promise.resolve({ version: "0.1.1", author: "Mohamed Elashri", platform: "linux", arch: "x86_64", updateSupported: options.updateSupported ?? true, updateHint: "Use AppImage" });
           return new Promise((resolve, reject) => requests.push({ command, args, resolve, reject }));
         },
       };
-      if (id === "@tauri-apps/plugin-dialog") return { save: async () => options.saveDestination ?? "/export.parquet", open: async () => null };
+      if (id === "@tauri-apps/api/window") return { getCurrentWindow: () => ({ onCloseRequested: async () => { calls.push({ command: "register-close" }); } }) };
+      if (id === "@tauri-apps/plugin-dialog") return { save: async () => options.saveDestination ?? "/export.parquet", open: async () => { calls.push({ command: "file-dialog" }); return options.openDialog ? options.openDialog() : null; } };
+      if (id === "@tauri-apps/plugin-updater") return { check: async () => { calls.push({ command: "check-update" }); return options.update ?? null; } };
+      if (id === "@tauri-apps/plugin-process") return { relaunch: async () => { calls.push({ command: "restart-update" }); } };
       if (id === "@tauri-apps/plugin-clipboard-manager") return { writeText: async (value) => copied.push(value) };
       if (id === "./icons") return { icon: () => "" };
       if (id.endsWith(".css")) return {};
@@ -498,4 +504,61 @@ test("slow opens show a pending entry and notes and disabled exports stay visibl
   const doc = dataset("doc"); doc.info = documentInfo(); doc.info.object.warnings = ["Numbers are exact source tokens."]; doc.doc = null; ui.useTab(doc);
   const markup = ui.renderMain(doc);
   assert.match(markup, /btn-export" disabled title="JSON documents are inspected/); assert.match(markup, /1 note</);
+});
+
+test("opening About reads local metadata without checking or downloading updates", async () => {
+  const ui = frontend();
+  assert.equal(ui.calls.length, 0);
+  assert.match(ui.renderTitlebar(), /data-action="open-about"/);
+  await ui.openAbout();
+  assert.equal(ui.getAboutOpen(), true);
+  assert.equal(ui.getAppMetadata().version, "0.1.1");
+  assert.deepEqual(ui.calls.map(c => c.command), ["app_metadata"]);
+  ui.closeAbout(); await ui.openAbout();
+  assert.deepEqual(ui.calls.map(c => c.command), ["app_metadata"]);
+  await ui.handleAction({ dataset: { action: "check-updates" } });
+  assert.deepEqual(ui.calls.map(c => c.command), ["app_metadata", "check-update"]);
+  assert.equal(ui.updates.state.phase, "current");
+});
+
+test("unsupported app packages cannot initiate installation", async () => {
+  const ui = frontend({ updateSupported: false, update: { version: "0.2.0" } });
+  await ui.openAbout(); await ui.handleAction({ dataset: { action: "check-updates" } });
+  await ui.handleAction({ dataset: { action: "confirm-update" } });
+  await ui.handleAction({ dataset: { action: "install-update" } });
+  assert.equal(ui.updates.state.phase, "available");
+  assert.deepEqual(ui.calls.map(c => c.command), ["app_metadata", "check-update"]);
+});
+
+test("startup is idempotent even when the DOM is already interactive", () => {
+  const ui = frontend({ readyState: "interactive" });
+  ui.init(); ui.init();
+  assert.equal(ui.calls.filter(c => c.command === "register-close").length, 1);
+});
+
+test("simultaneous picker requests open one dialog, and cancellation allows reopening", async () => {
+  let finish;
+  const ui = frontend({ openDialog: () => new Promise(resolve => { finish = resolve; }) });
+  const first = ui.chooseAndOpenFile(); await ui.chooseAndOpenFile();
+  assert.equal(ui.calls.filter(c => c.command === "file-dialog").length, 1);
+  finish(null); await first;
+  const second = ui.chooseAndOpenFile(); assert.equal(ui.calls.filter(c => c.command === "file-dialog").length, 2);
+  finish(null); await second;
+});
+
+test("picker errors do not leave future open requests locked", async () => {
+  const ui = frontend({ openDialog: () => { throw new Error("portal failed"); } });
+  await ui.chooseAndOpenFile(); await ui.chooseAndOpenFile();
+  assert.equal(ui.calls.filter(c => c.command === "file-dialog").length, 2);
+});
+
+test("pending view changes have a Sublime-style dot until the loaded view catches up", () => {
+  const ui = frontend(), tab = dataset(); ui.useTab(tab);
+  assert.equal(ui.hasPendingView(tab), false);
+  tab.quickSearch = "Alice";
+  assert.equal(ui.hasPendingView(tab), true); assert.match(ui.renderTabStrip(), /tab-close has-pending/);
+  tab.pageQuery = ui.queryFor(tab); assert.equal(ui.hasPendingView(tab), false);
+  tab.filters.push({ column: "col-0", op: "eq", value: "1" }); assert.equal(ui.hasPendingView(tab), true);
+  tab.filters = []; assert.equal(ui.hasPendingView(tab), false);
+  tab.stale = true; assert.match(ui.renderTabStrip(), /Source changed on disk/); assert.match(ui.renderTabStrip(), /tab-source-warning/);
 });

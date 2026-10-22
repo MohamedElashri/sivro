@@ -11,11 +11,17 @@ and DuckDB.
   `.xlsb`, `.xls`) and SQLite.
 - **Exports** the current view to Parquet, CSV, TSV, a JSON array or JSON Lines.
 - **Safe by design:** it never modifies a source file, runs no macros or
-  formulas, accepts no SQL and makes no network requests.
+  formulas and accepts no SQL. Exploring data works entirely offline.
 - **Exact values:** large integers and decimals are never rounded through
   floating point.
+- **Appearance:** Catppuccin Latte and Mocha themes, a saved Light/Dark/System
+  choice, visible menu hover and keyboard highlights, and clear pending-view
+  indicators on tabs.
+- **Manual updates:** About → Check for updates contacts GitHub only when
+  requested. Review the release notes and confirm before downloading and
+  installing a signed update. There are no automatic checks or updates.
 
-Sivro is a pre-1.0 beta; see the [release notes](docs/release-notes.md) for
+Sivro is a pre-1.0 beta; see the [changelog](CHANGELOG.md) for
 known limitations.
 
 ## Install
@@ -28,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/MohamedElashri/sivro/main/scripts/i
 
 The script picks the right package (`.deb`, `.rpm` or AppImage on Linux, the
 universal `.dmg` on macOS), verifies it against `SHA256SUMS.txt` and installs
-it. Set `SIVRO_VERSION=v0.1.0` to pin a release.
+it. Set `SIVRO_VERSION=v0.1.1` to pin a release.
 
 **Manual download:** get the package for your platform from the
 [releases page](https://github.com/MohamedElashri/sivro/releases).

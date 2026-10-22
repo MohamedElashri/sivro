@@ -26,12 +26,41 @@ jobs:
       release_id: ${{ steps.release.outputs.release_id }}
       release_draft: ${{ steps.release.outputs.release_draft }}
     steps:
-      - name: Check out release notes
+      - name: Check out source
         uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
-          sparse-checkout: docs/release-notes.md
-          sparse-checkout-cone-mode: false
+
+      - name: Verify updater signing is configured
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo "Set TAURI_SIGNING_PRIVATE_KEY before releasing (see docs/development.md)." >&2
+            exit 1
+          fi
+
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: node scripts/check-release-version.mjs
+
+      - name: Extract release notes from changelog
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          awk -v heading="## ${RELEASE_TAG#v}" '
+            $0 == heading { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-body.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-body.md"; then
+            echo "CHANGELOG.md must contain a nonempty section headed ## ${RELEASE_TAG#v}." >&2
+            exit 1
+          fi
 
       - name: Verify the requested release tag exists
         env:
@@ -56,16 +85,25 @@ jobs:
           releases_endpoint="repos/${GITHUB_REPOSITORY}/releases?per_page=100"
           release_json="$(gh api "$releases_endpoint" | jq -c --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag)][0]')"
           if [[ "$release_json" != "null" ]]; then
+            if [[ "$(jq -r '.draft' <<<"$release_json")" != "true" ]]; then
+              echo "Published releases are immutable. Bump the version instead of replacing signed update assets." >&2
+              exit 1
+            fi
+            if [[ "$(jq -r '.prerelease' <<<"$release_json")" == "true" ]]; then
+              echo "This workflow publishes stable updates; the existing draft is marked as a prerelease." >&2
+              exit 1
+            fi
             echo "Reusing existing release for ${RELEASE_TAG}."
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --notes-file "$RUNNER_TEMP/release-body.md"
           else
             echo "Creating draft release for ${RELEASE_TAG}."
-            # Known limitations are prepended to the generated change notes.
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "Sivro ${RELEASE_TAG}" \
-              --notes-file docs/release-notes.md \
-              --generate-notes \
+              --notes-file "$RUNNER_TEMP/release-body.md" \
               --draft
 
             # Newly created draft releases can take a few seconds to appear in
@@ -189,6 +227,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Run frontend and release regressions
+        run: npm run test:frontend
+
       # Every reader suite runs on the target before anything is bundled.
       - name: Run backend tests
         shell: bash
@@ -208,6 +249,8 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Ad-hoc signing avoids Apple Silicon apps being reported as damaged.
           # It is not notarization; users may still need to approve the app in Privacy & Security.
           APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos' && '-' || '' }}
@@ -217,7 +260,7 @@ jobs:
           releaseDraft: ${{ needs.create-release.outputs.release_draft }}
           releaseAssetNamePattern: "Sivro-v[version]-[platform]-[arch]-[bundle][setup][ext]"
           uploadUpdaterJson: false
-          uploadUpdaterSignatures: false
+          uploadUpdaterSignatures: true
           args: ${{ matrix.tauri_args }}
 
       - name: GUI end-to-end on the built app (Linux x86_64)
@@ -238,6 +281,30 @@ jobs:
     # the manual macOS/Windows smoke checklist in docs/development.md.
     environment: release
     steps:
+      - name: Check out release tooling
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Assemble and validate updater manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir assets
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" > release.json
+          node scripts/create-update-manifest.mjs assets release.json assets/latest.json
+          gh release upload "$RELEASE_TAG" assets/latest.json --repo "$GITHUB_REPOSITORY" --clobber
+
       - name: Attach SHA-256 checksums
         env:
           GH_TOKEN: ${{ github.token }}
@@ -245,8 +312,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir assets
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir assets
           (cd assets && rm -f SHA256SUMS.txt && sha256sum -- * > ../SHA256SUMS.txt)
           gh release upload "$RELEASE_TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
 

@@ -1,0 +1,109 @@
+/* Catppuccin Latte and Mocha: https://catppuccin.com/palette/
+   Semantic text accents are contrast-adjusted for small UI labels. */
+:root {
+  color-scheme: light;
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Menlo, Monaco, Consolas, monospace;
+  --radius-sm: 6px; --radius-md: 9px; --radius-lg: 12px;
+  --bg-app: #dce0e8;
+  --surface: #eff1f5; --surface-warm: #e6e9ef; --surface-deep: #dce0e8; --card: #eff1f5;
+  --border-soft: #ccd0da; --border-default: #bcc0cc; --border-strong: #8c8fa1;
+  --text-primary: #4c4f69; --text-secondary: #5c5f77; --text-muted: #62657b; --text-faint: #62657b;
+  --accent: #1e66f5; --on-accent: #ffffff;
+  --hover: #dce3f2; --selection: #d1ddf6; --grid-header: #e6e9ef;
+  --teal-900: #4c4f69; --teal-700: #1453ce; --teal-500: #209fb5; --teal-soft: #d1ddf6;
+  --plum-700: #762bd6; --plum-500: #8839ef; --plum-soft: #e6dcf6;
+  --coral-600: #bc1035; --coral-500: #d20f39; --coral-soft: #f4dce3;
+  --honey-600: #8b5e16; --honey-500: #df8e1d; --honey-soft: #f4e6d0;
+  --mint-700: #2d741f; --mint-soft: #dcebd9;
+  --sky-700: #1453ce; --sky-soft: #d1ddf6;
+  --scrim: rgba(17,17,27,.4);
+  --shadow-sm: 0 1px 2px rgba(76,79,105,.12);
+  --shadow-md: 0 5px 18px rgba(76,79,105,.16);
+  --shadow-lg: 0 18px 55px rgba(17,17,27,.24);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-app: #11111b;
+  --surface: #1e1e2e; --surface-warm: #181825; --surface-deep: #313244; --card: #1e1e2e;
+  --border-soft: #313244; --border-default: #45475a; --border-strong: #6c7086;
+  --text-primary: #cdd6f4; --text-secondary: #bac2de; --text-muted: #a6adc8; --text-faint: #9399b2;
+  --accent: #89b4fa; --on-accent: #11111b;
+  --hover: #313244; --selection: #364563; --grid-header: #181825;
+  --teal-900: #cdd6f4; --teal-700: #89b4fa; --teal-500: #74c7ec; --teal-soft: #283650;
+  --plum-700: #cba6f7; --plum-500: #cba6f7; --plum-soft: #392d4e;
+  --coral-600: #f38ba8; --coral-500: #f38ba8; --coral-soft: #462b3e;
+  --honey-600: #f9e2af; --honey-500: #f9e2af; --honey-soft: #443e30;
+  --mint-700: #a6e3a1; --mint-soft: #293e32;
+  --sky-700: #89b4fa; --sky-soft: #283650;
+  --scrim: rgba(0,0,0,.65);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.2);
+  --shadow-md: 0 5px 18px rgba(0,0,0,.3);
+  --shadow-lg: 0 18px 55px rgba(0,0,0,.5);
+}
+
+/* A restrained surface hierarchy and one primary accent in both modes. */
+body { background: var(--bg-app); }
+.sidebar { background: var(--surface-warm); }
+.side-actions .btn-primary { white-space: nowrap; padding: 0 9px; gap: 6px; }
+.side-actions .btn-primary kbd { padding: 2px 4px; }
+.titlebar-sub { color: var(--text-secondary); background: transparent; border-color: var(--border-soft); }
+.hero h1 em { background: none; color: var(--accent); }
+.btn-primary:hover:not(:disabled), .btn-tool.btn-apply:hover, .btn-tool.btn-export:hover { filter: none; background: color-mix(in srgb, var(--accent) 88%, var(--text-primary)); transform: none; }
+.btn-ghost:hover:not(:disabled), .btn-tool:hover:not(:disabled), .mini-btn:hover, .hero-recent:hover, .recent-item:hover { background: var(--hover); border-color: var(--accent); color: var(--text-primary); }
+.btn-primary, .btn-tool.btn-apply, .btn-tool.btn-export, .btn-tool.btn-apply:hover:not(:disabled), .btn-tool.btn-export:hover:not(:disabled) { color: var(--on-accent); }
+.btn-tool.btn-apply:hover:not(:disabled), .btn-tool.btn-export:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--text-primary)); }
+.pill, .badge-accent { background: var(--accent); color: var(--on-accent); }
+.grid tbody tr.selected:hover td { background: var(--selection); }
+.grid thead th { border-bottom: 2px solid var(--accent); }
+.th-main:hover { background: var(--hover); }
+.dataset-tab { position: relative; }
+.dataset-tab.active { box-shadow: inset 0 2px 0 var(--accent); }
+.tab-meta { max-width: 110px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.tab-close.has-pending { position: relative; color: var(--text-primary); }
+.tab-close.has-pending::before { content: ""; position: absolute; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--accent); }
+.tab-close.has-pending .icon { opacity: 0; }
+.tab-close.has-pending:hover::before { opacity: 0; }
+.tab-close.has-pending:hover .icon { opacity: 1; }
+.tab-source-warning { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: var(--honey-soft); border: 1px solid var(--honey-600); color: var(--honey-600); font-size: 11px; font-weight: 800; flex-shrink: 0; }
+.win-close:hover { color: var(--on-accent); }
+.modal-head, .drawer-head { background: var(--surface-warm); }
+.toast { background: var(--surface-deep); color: var(--text-primary); border: 1px solid var(--border-default); }
+.about-confirm { background: var(--surface-warm); }
+button:focus-visible, [role="tab"]:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+input::placeholder { color: var(--text-muted); opacity: 1; }
+::selection { background: var(--selection); color: var(--text-primary); }
+input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); }
+.theme-control { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-secondary); margin-right: 10px; app-region: no-drag; }
+.theme-control .select-trigger { min-width: 125px; height: 29px; font-size: 11.5px; }
+@media (max-width: 1020px) { .theme-control > .theme-label { display: none; } .titlebar-sub { display: none; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* Every choice has distinct hovered, keyboard-active, selected and disabled
+   states. Popups sit outside scrolling dialogs and stay within the viewport. */
+.select-control { display: inline-flex; position: relative; min-width: 0; vertical-align: middle; }
+.select-native { position: absolute !important; width: 1px !important; min-width: 0 !important; height: 1px !important; padding: 0 !important; border: 0 !important; overflow: hidden; clip-path: inset(50%); pointer-events: none; }
+.select-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--card); font-size: 12px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.select-trigger::after { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); flex-shrink: 0; }
+.select-trigger:hover:not(:disabled), .select-trigger[aria-expanded="true"] { background: var(--hover); border-color: var(--accent); }
+.select-popup { position: fixed; z-index: 1000; overflow-y: auto; overscroll-behavior: contain; padding: 5px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface); color: var(--text-primary); box-shadow: var(--shadow-lg); scrollbar-width: thin; }
+.select-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 34px; padding: 7px 10px; border-radius: 5px; font-size: 12px; cursor: pointer; overflow-wrap: anywhere; }
+.select-option:hover, .select-option.is-active { background: var(--selection); color: var(--text-primary); box-shadow: inset 3px 0 0 var(--accent); }
+.select-option[aria-selected="true"] { font-weight: 700; }
+.select-check { color: var(--accent); min-width: 14px; font-weight: 800; }
+.delimited-settings .select-control { width: 100%; }
+.filter-builder .select-control { flex: 1; min-width: 125px; }
+.pagesize .select-control { min-width: 65px; }
+.excel-sheet { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 7px; cursor: pointer; }
+.excel-sheet span { flex: 1; font-weight: 600; }
+.excel-sheet small { color: var(--text-muted); }
+.excel-sheet:hover:not(.disabled), .excel-sheet:focus-within { background: var(--hover); border-color: var(--accent); }
+.excel-sheet:has(input:checked) { background: var(--selection); border-color: var(--accent); }
+.excel-sheet.disabled { opacity: .5; cursor: not-allowed; }
+.excel-sheets { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--border-soft); border-radius: 8px; max-height: 280px; overflow-y: auto; }
+.excel-sheets legend { color: var(--text-secondary); padding: 0 6px; font-weight: 600; }
+.btn-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border: 1px solid transparent; border-radius: 6px; color: var(--text-muted); background: transparent; font-size: 20px; }
+.btn-icon:hover { background: var(--hover); color: var(--text-primary); border-color: var(--border-default); }

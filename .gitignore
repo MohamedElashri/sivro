@@ -30,3 +30,6 @@ Thumbs.db
 experiments/library-checks/target/
 .npm-cache/
 .cargo-home/
+
+# Local updater signing keys; never commit private keys.
+.secrets/

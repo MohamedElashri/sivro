@@ -9,11 +9,12 @@
 // binary that expects the Vite dev server), `tauri-driver` on PATH or in
 // ~/.cargo/bin, and WebKitWebDriver (Debian/Ubuntu: webkit2gtk-driver).
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
+const expectedVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 const args = process.argv.slice(2);
 const option = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const bin = resolve(option("--bin") ?? process.env.SIVRO_BIN ?? join(root, "src-tauri/target/release/sivro"));
@@ -27,7 +28,7 @@ const base = `http://127.0.0.1:${port}`;
 if (args.includes("--offline")) {
   execFileSync("node", ["scripts/with-duckdb.mjs", "cargo", "test", "--quiet", "--manifest-path", "src-tauri/Cargo.toml", "--lib", "write_e2e_fixtures", "--", "--ignored"],
     { cwd: root, env: { ...process.env, SIVRO_E2E_DIR: fixtures }, stdio: ["ignore", "ignore", "inherit"] });
-  const inner = ["node", JSON.stringify(new URL(import.meta.url).pathname), "--fixtures", JSON.stringify(fixtures), "--bin", JSON.stringify(bin)].join(" ");
+  const inner = ["node", JSON.stringify(new URL(import.meta.url).pathname), "--fixtures", JSON.stringify(fixtures), "--bin", JSON.stringify(bin), "--offline-check"].join(" ");
   const check = "(timeout 3 sh -c 'getent hosts example.com' >/dev/null && echo 'network reachable' && exit 1) || true";
   execFileSync("unshare", ["-rn", "sh", "-c", `ip link set lo up && ${check} && echo 'offline namespace: loopback only, no DNS' && ${inner}`], { stdio: "inherit" });
   rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
@@ -62,7 +63,7 @@ const element = async (css) => Object.values(await wd("POST", `/session/${sid}/e
 async function click(css) {
   for (let attempt = 0; ; attempt++) {
     try { return await wd("POST", `/session/${sid}/element/${await element(css)}/click`, {}); }
-    catch (error) { if (attempt >= 5 || !/stale element|no such element/.test(error.message)) throw error; await sleep(100); }
+    catch (error) { if (attempt >= 5 || !/stale element|no such element/.test(error.message)) throw new Error(`Click ${css}: ${error.message}`); await sleep(100); }
   }
 }
 async function waitFor(label, probe, ms = 30_000) {
@@ -77,6 +78,11 @@ async function waitFor(label, probe, ms = 30_000) {
 const present = (css) => () => exec("return !!document.querySelector(arguments[0])", css);
 const mainText = () => exec("return document.querySelector('main')?.innerText ?? ''");
 const attr = (value) => value.replace(/["\\]/g, "\\$&");
+async function chooseTheme(value) {
+  await click('#theme-preference-trigger');
+  await click(`.select-popup [data-value="${value}"]`);
+  await waitFor(`${value} appearance`, () => exec("return document.documentElement.dataset.theme === arguments[0]", value));
+}
 
 const cases = [
   { file: "people.parquet", expect: ["9007199254740993", "Alice"] },
@@ -94,6 +100,44 @@ try {
   await waitFor("tauri-driver", () => fetch(`${base}/status`).then((r) => r.ok), 15_000);
   sid = (await wd("POST", "/session", { capabilities: { alwaysMatch: { "tauri:options": { application: bin } } } })).sessionId;
   await waitFor("start screen", present(".hero"));
+  await chooseTheme("dark");
+  const darkBackground = await exec("return getComputedStyle(document.querySelector('.sidebar')).backgroundColor");
+  if (darkBackground !== "rgb(24, 24, 37)") throw new Error(`Dark surface was ${darkBackground}`);
+  await exec("location.reload()"); await waitFor("saved dark appearance", () => exec("return document.documentElement.dataset.theme === 'dark' && !!document.querySelector('.hero')"));
+  await click('#theme-preference-trigger');
+  const hoverOption = await element('.select-popup [data-value="light"]');
+  await wd("POST", `/session/${sid}/actions`, { actions: [{ type: "pointer", id: "menu-pointer", parameters: { pointerType: "mouse" }, actions: [{ type: "pointerMove", duration: 100, origin: { "element-6066-11e4-a52e-4f735466cecf": hoverOption }, x: 0, y: 0 }] }] });
+  await waitFor("dropdown pointer highlight", () => exec("return document.querySelector('.select-option.is-active')?.dataset.value === 'light'"));
+  await exec("document.querySelector('#theme-preference-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true,cancelable:true})); document.querySelector('#theme-preference-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}))");
+  if (!(await exec("return document.querySelector('.select-option.is-active')?.dataset.value === 'light'"))) throw new Error("Dropdown keyboard highlight failed");
+  await exec("document.querySelector('#theme-preference-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
+  if (await exec("return !!document.querySelector('.select-popup')")) throw new Error("Escape did not dismiss the dropdown");
+  await chooseTheme("light");
+  results.push({ file: "Appearance", ms: 0, steps: ["dark surfaces", "saved choice", "keyboard highlight", "Escape", "light mode"] });
+  await click('[data-action="open-about"]');
+  await waitFor("About version from the running app", () => exec("return document.querySelector('#about-version')?.textContent === arguments[0]", expectedVersion));
+  const about = await exec("return document.querySelector('.about-modal')?.innerText ?? ''");
+  for (const token of ["Mohamed Elashri", "MIT", "No automatic checks", "Check for updates"]) {
+    if (!about.includes(token)) throw new Error(`About is missing ${JSON.stringify(token)}`);
+  }
+  if (args.includes("--keep")) {
+    const shot = await wd("GET", `/session/${sid}/screenshot`);
+    writeFileSync(join(work, "about.png"), Buffer.from(shot, "base64"));
+  }
+  if (args.includes("--offline-check")) {
+    await click('[data-action="check-updates"]');
+    await waitFor("recoverable offline update error", () => exec("return document.querySelector('.about-error')?.textContent.includes('Could not check for updates')"));
+    if (!(await exec("return !!document.querySelector('[data-action=\"check-updates\"]')"))) throw new Error("Offline update check cannot be retried");
+  }
+  if (!(await exec("return document.activeElement?.closest('.about-modal') !== null"))) throw new Error("About did not receive keyboard focus");
+  await click('#about-close');
+  await waitFor("About focus restoration", () => exec("return document.activeElement?.id === 'open-about'"));
+  if (args.includes("--keep")) {
+    await chooseTheme("dark"); await click('[data-action="open-about"]');
+    const shot = await wd("GET", `/session/${sid}/screenshot`); writeFileSync(join(work, "about-dark.png"), Buffer.from(shot, "base64"));
+    await click('#about-close'); await chooseTheme("light");
+  }
+  results.push({ file: "About", ms: 0, steps: ["version", "author", "links", "manual updates", "focus restored"] });
   const paths = cases.map((c) => join(fixtures, c.file));
   await exec("localStorage.setItem('sivro-recents', JSON.stringify(arguments[0])); location.reload();", paths);
   await waitFor("recent files", () => exec("return document.querySelectorAll('.recent-item').length === arguments[0]", paths.length));
@@ -107,6 +151,20 @@ try {
         await click(`[data-action="${test.dialog}"]`); steps.push("confirm dialog");
       }
       await waitFor(`${test.file} view`, present(test.document ? ".doc-view .doc-row" : "table.grid tbody tr"));
+      if (test.file === "people.parquet") {
+        await exec("const input=document.querySelector('#quick-search'); input.value='Alice'; input.dispatchEvent(new Event('input',{bubbles:true}))");
+        if (!(await exec("return !!document.querySelector('.tab-close.has-pending')"))) throw new Error("Pending view indicator is missing");
+        for (const mode of ["dark", "light"]) {
+          await chooseTheme(mode);
+          if (!(await exec("return !!document.querySelector('.tab-close.has-pending') && !!document.querySelector('table.grid tbody tr')"))) throw new Error("Theme change discarded the view or pending changes");
+          if (args.includes("--keep")) {
+            const shot = await wd("GET", `/session/${sid}/screenshot`); writeFileSync(join(work, `grid-${mode}.png`), Buffer.from(shot, "base64"));
+          }
+        }
+        await exec("const input=document.querySelector('#quick-search'); input.value=''; input.dispatchEvent(new Event('input',{bubbles:true}))");
+        if (await exec("return !!document.querySelector('.tab-close.has-pending')")) throw new Error("Pending view indicator did not clear after reverting");
+        steps.push("pending view dot");
+      }
       if (test.document) {
         await click(".doc-toggle"); steps.push("expand node");
         await waitFor("expanded children", present(".doc-children .doc-row"));
@@ -140,6 +198,12 @@ try {
   if (remote.length) throw new Error(`Remote resources were requested: ${remote.join(", ")}`);
 } catch (error) {
   failure = error;
+  if (sid) {
+    const shot = await wd("GET", `/session/${sid}/screenshot`).catch(() => null);
+    if (shot) writeFileSync(join(work, "failure.png"), Buffer.from(shot, "base64"));
+    const html = await exec("return document.documentElement.outerHTML").catch(() => "");
+    writeFileSync(join(work, "failure.html"), html);
+  }
 } finally {
   if (sid) await wd("DELETE", `/session/${sid}`).catch(() => undefined);
   const exited = new Promise((done) => driver.once("exit", done));

@@ -3,7 +3,7 @@
 Sivro reads Parquet (`.parquet`, `.pq`), CSV (`.csv`), TSV (`.tsv`), JSON
 (`.json`), JSON Lines (`.jsonl`, `.ndjson`), Excel (`.xlsx`, `.xlsm`, `.xlsb`,
 `.xls`) and SQLite (`.sqlite`, `.sqlite3`, `.db`). It never modifies a source.
-Known limitations are summarized in the [release notes](release-notes.md).
+Release limitations are summarized in the [changelog](../CHANGELOG.md).
 
 ## Common workflow
 

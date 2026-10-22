@@ -1,5 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { UpdateController } from "./updates";
+import { ABOUT_LINKS, renderAbout } from "./about";
+import type { AppMetadata } from "./about";
+import { ThemeController } from "./theme";
+import { enhanceSelects, dismissSelect } from "./selects";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { icon } from "./icons";
@@ -42,6 +51,7 @@ import "@fontsource/jetbrains-mono/latin-400.css";
 import "@fontsource/jetbrains-mono/latin-500.css";
 import "@fontsource/jetbrains-mono/latin-600.css";
 import "./styles.css";
+import "./themes.css";
 
 // ---------------------------------------------------------------------------
 // State
@@ -130,6 +140,57 @@ let exportFormat: ExportFormat = "parquet";
 let exportBusy = false;
 let lastExport: ExportResult | null = null;
 let fileInfoOpen = false;
+let aboutOpen = false;
+let appMetadata: AppMetadata | null = null;
+let metadataError: string | null = null;
+let aboutReturnFocus: string | null = null;
+const updates = new UpdateController(check, relaunch, refreshAbout);
+const theme = new ThemeController(localStorage, typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null,
+  (value) => {
+    document.documentElement?.setAttribute("data-theme", value);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", value === "dark" ? "#1e1e2e" : "#eff1f5");
+  });
+
+function refreshAbout(): void {
+  if (!aboutOpen) return;
+  const overlay = document.querySelector<HTMLElement>(".about-overlay");
+  if (!overlay) return;
+  const focusId = (document.activeElement as HTMLElement | null)?.id;
+  const notesOpen = overlay.querySelector<HTMLDetailsElement>(".update-notes")?.open ?? false;
+  const scroll = overlay.querySelector(".modal-body")?.scrollTop ?? 0;
+  // Progress updates replace just this dialog, leaving the explorer's grid
+  // and current selection intact even during a long download.
+  overlay.outerHTML = renderAbout(appMetadata, metadataError, updates);
+  const notes = document.querySelector<HTMLDetailsElement>(".update-notes");
+  if (notes) notes.open = notesOpen;
+  const body = document.querySelector(".about-modal .modal-body");
+  if (body) body.scrollTop = scroll;
+  (focusId ? document.getElementById(focusId) : null)?.focus();
+  if (!document.activeElement?.closest(".about-modal")) document.getElementById("about-close")?.focus();
+}
+
+async function openAbout(): Promise<void> {
+  // WebKit does not always focus buttons after a pointer click. Preserve
+  // the known About trigger when the active element has no stable ID.
+  if (!aboutOpen) aboutReturnFocus = (document.activeElement as HTMLElement | null)?.id || "open-about";
+  aboutOpen = true;
+  metadataError = null;
+  render();
+  document.getElementById("about-close")?.focus();
+  if (appMetadata) return;
+  try { appMetadata = await invoke<AppMetadata>("app_metadata"); }
+  catch (error) { metadataError = String(error); }
+  render();
+}
+function closeAbout(): void {
+  if (updates.changingApp) { showToast("Keep Sivro open until the update finishes.", "info"); return; }
+  updates.cancelConfirm();
+  aboutOpen = false;
+  render();
+  if (aboutReturnFocus) document.getElementById(aboutReturnFocus)?.focus();
+  const returnFocus = aboutReturnFocus;
+  globalThis.requestAnimationFrame?.(() => { if (!aboutOpen && returnFocus) document.getElementById(returnFocus)?.focus(); });
+}
 let columnSearch = "";
 let newFilter: Filter = { column: "", op: "contains", value: "" };
 let filterError = "";
@@ -330,6 +391,7 @@ function setFilterError(message: string): void {
   if (error) error.textContent = message;
   const input = document.getElementById("nf-value") as HTMLInputElement | HTMLSelectElement | null;
   input?.setAttribute("aria-invalid", message ? "true" : "false");
+  if (input) document.getElementById(`${input.id}-trigger`)?.setAttribute("aria-invalid", String(!!message));
   input?.setCustomValidity(message);
 }
 
@@ -367,9 +429,9 @@ async function ensureFilterProfile(tab: DatasetTab, column: ColumnInfo): Promise
   tab.profileCache.set(key, null);
   try {
     await getColumnProfile(tab, column.id);
-    if (current(tab, info) && filterPanelOpen && newFilter.column === column.id && document.activeElement?.id !== "nf-value") {
+    if (current(tab, info) && filterPanelOpen && newFilter.column === column.id && !["nf-value", "nf-value-trigger"].includes(document.activeElement?.id ?? "")) {
       const control = document.getElementById("nf-value-control");
-      if (control) control.innerHTML = renderFilterValue(tab, column);
+      if (control) { dismissSelect(); control.innerHTML = renderFilterValue(tab, column); enhanceSelects(control); }
     }
   } catch (error) { failTab(tab, error); if (current(tab, info)) render(); }
 }
@@ -690,9 +752,15 @@ async function fullCells(tab: DatasetTab, row: number, columns: string[]): Promi
   if (!current(tab, info) || activeTab() !== tab || tab.page !== page || tab.selectedRow !== row || !matches(result, info) || result.rowId !== page.rowIds[row] || result.columnIds.join("\0") !== columns.join("\0")) return null;
   return result.cells;
 }
+let filePickerOpen = false;
 async function chooseAndOpenFile(): Promise<void> {
-  const selected = await open({ multiple: false, filters: [{ name: "Parquet, CSV, TSV, JSON, JSON Lines, Excel and SQLite", extensions: ["parquet", "pq", "csv", "tsv", "json", "jsonl", "ndjson", "xlsx", "xlsm", "xlsb", "xls", "sqlite", "sqlite3", "db"] }] });
-  if (typeof selected === "string" && selected) await openFileByPath(selected);
+  if (filePickerOpen || updates.changingApp) return;
+  filePickerOpen = true;
+  try {
+    const selected = await open({ multiple: false, filters: [{ name: "Parquet, CSV, TSV, JSON, JSON Lines, Excel and SQLite", extensions: ["parquet", "pq", "csv", "tsv", "json", "jsonl", "ndjson", "xlsx", "xlsm", "xlsb", "xls", "sqlite", "sqlite3", "db"] }] });
+    if (typeof selected === "string" && selected) await openFileByPath(selected);
+  } catch (error) { showToast(`Could not open the file picker: ${String(error)}`, "error"); }
+  finally { filePickerOpen = false; }
 }
 async function createSampleFile(): Promise<void> {
   const dest = await save({ defaultPath: "sivro-sample.parquet", filters: [{ name: "Parquet", extensions: ["parquet"] }] }); if (!dest) return;
@@ -740,6 +808,8 @@ function renderTitlebar(): string {
         <span class="titlebar-sub">local data explorer</span>
       </div>
       <div class="titlebar-trailing">
+        <label class="theme-control"><span class="theme-label">Appearance</span><select id="theme-preference" aria-label="Appearance" data-change="theme">${(["system", "light", "dark"] as const).map((value) => `<option value="${value}" ${theme.preference === value ? "selected" : ""}>${{ system: "System", light: "Light · Latte", dark: "Dark · Mocha" }[value]}</option>`).join("")}</select></label>
+        <button id="open-about" class="btn-ghost about-trigger" data-action="open-about" title="About Sivro and updates">${icon("info")}<span>About</span></button>
         <div class="window-controls">
           <button class="win-btn win-min" data-action="win-min" title="Minimize">${icon("minimize")}</button>
           <button class="win-btn win-max" data-action="win-max" title="Maximize">${icon("maximize")}</button>
@@ -819,16 +889,29 @@ function renderSidebar(tab: DatasetTab | null): string {
     </aside>`;
 }
 
+function hasPendingView(tab: DatasetTab): boolean {
+  if (!tab.pageQuery || isDocument(tab)) return false;
+  const query = queryFor(tab);
+  return query.quickSearch !== tab.pageQuery.quickSearch || JSON.stringify(query.filter) !== JSON.stringify(tab.pageQuery.filter);
+}
+function refreshTabIndicators(): void {
+  const strip = document.querySelector<HTMLElement>(".tabstrip");
+  if (!strip) return;
+  const scroll = strip.scrollLeft;
+  strip.outerHTML = renderTabStrip();
+  const next = document.querySelector(".tabstrip"); if (next) next.scrollLeft = scroll;
+}
 function renderTabStrip(): string {
   if (tabs.length === 0) return "";
   return `
     <div class="tabstrip" role="tablist" aria-label="Open datasets">
       ${tabs.map((t) => `
-        <button class="dataset-tab ${t.info.path === activePath ? "active" : ""}" data-action="switch-tab" data-path="${escapeHtml(t.info.path)}" role="tab" aria-selected="${t.info.path === activePath}">
+        <button class="dataset-tab ${t.info.path === activePath ? "active" : ""} ${t.stale ? "source-changed" : ""}" data-action="switch-tab" data-path="${escapeHtml(t.info.path)}" role="tab" aria-selected="${t.info.path === activePath}" title="${escapeHtml(t.info.path)}${t.stale ? " — Source changed on disk; refresh to reload" : hasPendingView(t) ? " — Pending view changes; click Apply to load them" : ""}">
           <span class="tab-file">${escapeHtml(t.info.fileName)}</span>
           <span class="tab-meta">${escapeHtml(tabMeta(t))}</span>
           <span class="tab-info" data-action="open-file-info" data-path="${escapeHtml(t.info.path)}" title="File details">${icon("info")}</span>
-          <span class="tab-close" data-action="close-tab" data-path="${escapeHtml(t.info.path)}" title="Close">${icon("close")}</span>
+          ${t.stale ? `<span class="tab-source-warning" aria-label="Source changed on disk; refresh to reload" title="Source changed on disk; refresh to reload">!</span>` : ""}
+          <span class="tab-close ${hasPendingView(t) ? "has-pending" : ""}" data-action="close-tab" data-path="${escapeHtml(t.info.path)}" title="${hasPendingView(t) ? "Pending view changes — Apply to load them. Click to close this view." : "Close"}">${hasPendingView(t) ? `<span class="sr-only">Pending view changes</span>` : ""}${icon("close")}</span>
         </button>`).join("")}
     </div>`;
 }
@@ -1233,12 +1316,15 @@ function renderToasts(): void {
 function render(): void {
   const app = document.getElementById("app");
   if (!app) return;
+  dismissSelect();
   // Preserve focus + grid scroll across re-renders.
   // NOTE: during loading there is no #grid-scroll element — keep the last
   // known offsets instead of resetting to 0, so sorting/paging doesn't
   // jump the horizontal scrollbar back to the start.
   const active = document.activeElement as HTMLInputElement | null;
   const focusId = active?.id || null;
+  const notesOpen = document.querySelector<HTMLDetailsElement>(".update-notes")?.open ?? false;
+  const aboutScroll = document.querySelector(".about-modal .modal-body")?.scrollTop ?? 0;
   const selStart = active?.selectionStart ?? null;
   const selEnd = active?.selectionEnd ?? null;
   const grid = document.getElementById("grid-scroll");
@@ -1260,9 +1346,15 @@ function render(): void {
     ${renderExcel(excelDialog)}
     ${renderSqlite(sqliteDialog)}
     ${renderExportModal(tab)}
+    ${aboutOpen ? renderAbout(appMetadata, metadataError, updates) : ""}
     <div id="toasts" class="toasts"></div>`;
 
   renderToasts();
+  enhanceSelects(app);
+  const notes = document.querySelector<HTMLDetailsElement>(".update-notes");
+  if (notes) notes.open = notesOpen;
+  const aboutBody = document.querySelector(".about-modal .modal-body");
+  if (aboutBody) aboutBody.scrollTop = aboutScroll;
   if (focusId) {
     const next = document.getElementById(focusId) as HTMLInputElement | null;
     if (next) {
@@ -1274,6 +1366,7 @@ function render(): void {
       }
     }
   }
+  if (aboutOpen && !document.activeElement?.closest(".about-modal")) document.getElementById("about-close")?.focus();
   const nextGrid = document.getElementById("grid-scroll");
   if (nextGrid) {
     nextGrid.scrollTop = lastGridScroll.top;
@@ -1293,6 +1386,28 @@ async function handleAction(el: HTMLElement): Promise<void> {
   const tab = activeTab();
 
   switch (action) {
+    case "open-about":
+    case "reload-about": await openAbout(); break;
+    case "close-about": closeAbout(); break;
+    case "check-updates": if (appMetadata) await updates.checkNow(); break;
+    case "confirm-update": if (appMetadata?.updateSupported) updates.confirm(); break;
+    case "cancel-update": updates.cancelConfirm(); break;
+    case "install-update":
+      if (appMetadata?.updateSupported) {
+        if (exportBusy || opening.size || tabs.some((t) => t.operations.size > 0 || t.refreshing)) {
+          showToast("Wait for current operations and exports to finish before installing.", "info");
+        } else await updates.installConfirmed();
+      }
+      break;
+    case "restart-update": await updates.restartNow(); break;
+    case "about-link": {
+      const url = ABOUT_LINKS[el.dataset.link as keyof typeof ABOUT_LINKS];
+      if (url) {
+        try { await openUrl(url); }
+        catch (error) { showToast(`Could not open link: ${String(error)}`, "error"); }
+      }
+      break;
+    }
     case "parsing-settings": if (tab) await openDelimited(tab.info.path); break;
     case "preview-delimited": await previewDelimited(); break;
     case "confirm-delimited": await confirmDelimited(); break;
@@ -1332,6 +1447,7 @@ async function handleAction(el: HTMLElement): Promise<void> {
       await invoke("window_maximize").catch(() => undefined);
       break;
     case "win-close":
+      if (updates.changingApp) { showToast("Keep Sivro open until the update finishes.", "info"); break; }
       await invoke("window_close").catch(() => undefined);
       break;
     case "open-file":
@@ -1441,7 +1557,8 @@ async function handleAction(el: HTMLElement): Promise<void> {
       setFilterError(error || "");
       if (error || (input && !input.checkValidity())) {
         if (!error && input) setFilterError(input.validationMessage);
-        input?.reportValidity();
+        if (input instanceof HTMLSelectElement) document.getElementById(`${input.id}-trigger`)?.focus();
+        else input?.reportValidity();
         break;
       }
       // Stage only — nothing is queried until Apply is clicked.
@@ -1714,7 +1831,7 @@ function setupEvents(): void {
     // the overlay. Explicit close buttons (close-modals / close-file-info)
     // always run.
     if (
-      target.dataset.action === "close-modals" &&
+      ["close-modals", "close-about"].includes(target.dataset.action ?? "") &&
       target.classList.contains("overlay") &&
       (e.target as HTMLElement).closest("[data-modal-card]")
     ) {
@@ -1735,6 +1852,7 @@ function setupEvents(): void {
       // Staged — no query while typing. Click Apply to run.
       tab.quickSearch = target.value;
       tab.currentPage = 1;
+      refreshTabIndicators();
     } else if (target.id === "column-search") {
       columnSearch = target.value;
       debouncedColumnSearch();
@@ -1751,6 +1869,7 @@ function setupEvents(): void {
   app.addEventListener("change", (e) => {
     const target = e.target as HTMLInputElement | HTMLSelectElement;
     const kind = (target as HTMLElement).dataset.change;
+    if (kind === "theme") { theme.setPreference(target.value); return; }
     if (target.dataset.delimited) { changeDelimited(target.dataset.delimited, target.value); return; }
     if (target.dataset.excel) { changeExcel(target.dataset.excel, target.value); return; }
     if (target.dataset.sqlite) { changeSqlite(target.value); return; }
@@ -1792,11 +1911,24 @@ function setupEvents(): void {
   }, true);
 
   app.addEventListener("keydown", (e) => {
+    if (e.defaultPrevented) return;
+    if (aboutOpen) {
+      if (e.key === "Escape") { e.preventDefault(); closeAbout(); }
+      if (e.key === "Tab") {
+        const focusable = Array.from(app.querySelectorAll<HTMLElement>(".about-modal button:not([disabled]), .about-modal summary"));
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (e.shiftKey && (document.activeElement === first || !document.activeElement?.closest(".about-modal"))) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && (document.activeElement === last || !document.activeElement?.closest(".about-modal"))) { e.preventDefault(); first?.focus(); }
+      }
+      // App shortcuts must not open other dialogs underneath About.
+      if ((e.metaKey || e.ctrlKey) && ["o", "k", "r"].includes(e.key.toLowerCase()) || e.key === "F5") e.preventDefault();
+      return;
+    }
     const target = e.target as HTMLElement;
     const typing = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
       e.preventDefault();
-      void chooseAndOpenFile();
+      if (!e.repeat) void chooseAndOpenFile();
     } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
       document.getElementById("quick-search")?.focus();
@@ -1825,6 +1957,7 @@ function setupEvents(): void {
   // Desktop drag & drop of supported table files.
   getCurrentWebview()
     .onDragDropEvent((event) => {
+      if (aboutOpen || updates.changingApp) return;
       if (event.payload.type === "drop" && event.payload.paths.length > 0) {
         const first = event.payload.paths[0];
         if (/\.(parquet|pq|csv|tsv|json|jsonl|ndjson|xlsx|xlsm|xlsb|xls|sqlite3|sqlite|db)$/i.test(first)) {
@@ -1841,7 +1974,16 @@ function setupEvents(): void {
 // Init
 // ---------------------------------------------------------------------------
 
+let initialized = false;
 function init(): void {
+  if (initialized) return;
+  initialized = true;
+  void getCurrentWindow().onCloseRequested((event) => {
+    if (updates.changingApp) {
+      event.preventDefault();
+      showToast("Keep Sivro open until the update finishes.", "info");
+    }
+  });
   render();
   setupEvents();
   // If launched with a file path (e.g. "open with"), Tauri passes it as argv —
@@ -1849,5 +1991,5 @@ function init(): void {
   // in the opener flow, so here we simply present the hero state.
 }
 
-document.addEventListener("DOMContentLoaded", init);
-if (document.readyState !== "loading") init();
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true });
+else init();
