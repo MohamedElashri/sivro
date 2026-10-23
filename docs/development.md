@@ -50,11 +50,9 @@ TypeScript/Vite frontend in `src`.
 - **Readers** (`adapters/`): Parquet, HDF5, CSV/TSV, JSON/JSONL record tables and
   Excel run on DuckDB through the `TableSource` trait; JSON and Excel data is
   first staged into session scratch (`stage.rs`). JSON documents use a bounded
-  in-memory tree. HDF5 uses a bounded positioned source with `hdf5-pure`,
-  lazy group navigation and staged selections (`adapters/hdf5/`); its column-table
-  exports have explicit null masks and validated type/encoding annotations.
-  SQLite uses its own read-only rusqlite connection with an
-  authorizer that allows only reads.
+  in-memory tree. HDF5 stages bounded selections using a patched `hdf5-pure`
+  ([vendor notes](../src-tauri/vendor/hdf5-pure/PATCHES.md)). SQLite uses a
+  read-only rusqlite connection with a read-only authorizer.
 - **Queries** (`query/`): the frontend sends typed filters, column IDs, sorts
   and paging, never SQL. Rust compiles them with allow-listed identifiers and
   bound values, separately for DuckDB and SQLite.
@@ -101,11 +99,9 @@ which the Makefile adds automatically.
   Ubuntu 24.04 needs `kernel.apparmor_restrict_unprivileged_userns=0` for the
   offline run.
 
-HDF5 fixtures include h5py-generated classic, v1.14-compatible and layout-v5
-files, plus an independent h5py verifier for Sivro exports
-(`tests/fixtures/hdf5/`). Generate an export with the ignored
-`write_hdf5_interop_export` test and `SIVRO_HDF5_EXPORT` set, then run
-`uv run --with h5py tests/fixtures/hdf5/verify_exports.py PATH`.
+HDF5 interoperability fixtures cover v3/v4/v5 and all modern chunk indexes.
+Run the ignored `write_hdf5_interop_export` test with `SIVRO_HDF5_EXPORT=PATH`,
+then `uv run --with h5py tests/fixtures/hdf5/verify_exports.py PATH`.
 
 Fixtures are synthetic. On a Ryzen 7 7735H, 1M-row sources open in 14 ms
 (Parquet), ~200 ms (CSV/TSV) and ~5–6 s (JSON/JSONL, which are staged), with

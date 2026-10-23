@@ -4,7 +4,7 @@ import h5py
 import numpy as np
 
 root = Path(__file__).parent
-for filename, version, userblock in [("classic.h5", "earliest", 0), ("modern.hdf5", "v114", 0), ("userblock.hdf", "v114", 512)]:
+for filename, version, userblock in [("classic.h5", "earliest", 0), ("modern.hdf5", "v114", 0), ("userblock.hdf", "v114", 512), ("types-v5.h5", "v200", 0)]:
     with h5py.File(root / filename, "w", libver=version, userblock_size=userblock) as f:
         f.attrs["producer"] = "h5py"
         f.attrs["wide"] = np.uint64(2**64 - 1)
@@ -48,14 +48,34 @@ for filename, version, userblock in [("classic.h5", "earliest", 0), ("modern.hdf
     if userblock:
         with (root / filename).open("r+b") as out:
             out.write(b"Synthetic user block: not HDF4 or a MATLAB reader.\n")
-with h5py.File(root / "layout-v5.h5", "w", libver="latest") as f:
-    f.create_dataset("new_chunks", data=np.arange(16).reshape(4,4), chunks=(2,2), compression="gzip")
-    f.create_dataset("readable", data=np.array([7, 8], dtype="i8"))
+# HDF5 2.0 layouts, including all five chunk index types.
+for filename, version, block in [("layout-v5.h5", "v200", 0), ("layout-v5-userblock.h5", "v200", 512), ("indexes-v4.h5", "v114", 0)]:
+    with h5py.File(root / filename, "w", libver=version, userblock_size=block) as f:
+        values = np.arange(48, dtype=np.int64).reshape(6, 8) + 9007199254740993
+        for compression in ["gzip", None]:
+            group = f.create_group("filtered" if compression else "plain")
+            for name, chunks, maximum in [("single", (6, 8), None), ("fixed", (2, 3), None), ("extensible", (2, 3), (None, 8)), ("extensible_inner", (2, 3), (6, None)), ("btree", (2, 3), (None, None))]:
+                group.create_dataset(name, data=values, chunks=chunks, maxshape=maximum,
+                                     compression=compression, shuffle=bool(compression), fletcher32=bool(compression))
+        for name, maximum in [("fixed_paged", None), ("extensible_paged", (None,))]:
+            f.create_dataset(name, data=np.arange(10000, dtype=np.int64) + 9007199254740993,
+                             chunks=(1,), maxshape=maximum, compression="gzip")
+        # Enough chunks to require internal v2 B-tree nodes.
+        values = np.arange(1600, dtype=np.int64).reshape(40, 40) + 9007199254740993
+        f.create_dataset("btree_deep", data=values, chunks=(2, 2), maxshape=(None, None), compression="gzip", fletcher32=True)
+        f.create_dataset("unallocated", shape=(6, 8), maxshape=(None, None), chunks=(2, 3), dtype="i8", compression="gzip", fillvalue=-7)
+        # Early allocation without filters selects the implicit index.
+        dcpl = h5py.h5p.create(h5py.h5p.DATASET_CREATE)
+        dcpl.set_chunk((2, 3))
+        dcpl.set_alloc_time(h5py.h5d.ALLOC_TIME_EARLY)
+        implicit = h5py.h5d.create(f.id, b"implicit", h5py.h5t.STD_I64LE,
+                                   h5py.h5s.create_simple((6, 8)), dcpl=dcpl)
+        implicit.write(h5py.h5s.ALL, h5py.h5s.ALL, np.arange(48, dtype=np.int64).reshape(6, 8) + 9007199254740993)
+        if version == "v200":
+            f.create_dataset("huge_chunk", shape=(1, 2**30), chunks=(1, 2**30), dtype="i4")
+        f.create_dataset("readable", data=np.array([7, 8], dtype="i8"))
 (root / "README.md").write_text(
-    f"Synthetic fixtures generated with h5py {h5py.__version__}, HDF5 {h5py.version.hdf5_version}, NumPy {np.__version__}.\n\n"
-    "Regenerate with `uv run --with h5py generate.py`.\n"
-    "Covers classic/latest superblocks, user blocks, attributes, scalar/null/empty\n"
-    "datasets, multidimensional chunks, gzip/shuffle/Fletcher32/LZF, endian\n"
-    "integers, enums/booleans, compound records, variable-length strings/arrays,\n"
-    "opaque/reference bytes, hard cycles and external/virtual storage refusal.\n"
+    f"Synthetic fixtures: h5py {h5py.__version__}, HDF5 {h5py.version.hdf5_version}, NumPy {np.__version__}.\n\n"
+    "Regenerate: `uv run --with h5py generate.py`. Covers v3/v4/v5 layouts, all\n"
+    "chunk indexes, filters, exact/nested types, user blocks and storage limits.\n"
 )

@@ -1,0 +1,214 @@
+--- a/src/data_layout.rs
++++ b/src/data_layout.rs
+@@ -1,7 +1,7 @@
+ //! The Data Layout message (type 0x0008): a dataset's storage class and the
+ //! properties of that class.
+ //!
+-//! [`DataLayout::parse`] reads a version 3 or a version 4 message. The two
++//! [`DataLayout::parse`] reads a version 3, 4 or 5 message. These versions
+ //! encode a compact and a contiguous dataset's properties alike, and a version 4
+ //! message stores a chunked dataset's feature flags and its indexing type as
+ //! well, which the parse turns into a [`ChunkedLayoutFlags`] and a
+@@ -57,7 +57,7 @@
+     /// # Errors
+     ///
+     /// Returns [`FormatError::InvalidLayoutVersion`] if the version byte is
+-    /// neither 3 nor 4, [`FormatError::InvalidLayoutClass`] if the class byte
++    /// neither 3, 4 nor 5, [`FormatError::InvalidLayoutClass`] if the class byte
+     /// is outside the storage classes that version defines,
+     /// [`FormatError::InvalidChunkIndexType`] if a version 4 chunked message
+     /// stores an indexing type outside 1 to 5, and
+@@ -69,7 +69,7 @@
+ 
+         match version {
+             LAYOUT_VERSION_3 => Self::parse_v3(data, layout_class, offset_size, length_size),
+-            LAYOUT_VERSION_4 => Self::parse_v4(data, layout_class, offset_size, length_size),
++            LAYOUT_VERSION_4 | 5 => Self::parse_v4(data, layout_class, offset_size, length_size),
+             _ => Err(FormatError::InvalidLayoutVersion(version)),
+         }
+     }
+--- a/src/chunked_read.rs
++++ b/src/chunked_read.rs
+@@ -12,6 +12,7 @@
+ 
+ use crate::address::StoredAddress;
+ use crate::btree_v1::btree_v1_node_header_size;
++use crate::btree_v2::{BTreeV2Header, collect_btree_v2_records_from_source};
+ use crate::bytes::read_offset;
+ use crate::chunk_cache::{CachePass, ChunkCache};
+ use crate::chunk_grid::{ChunkGrid, GridOrder};
+@@ -1288,6 +1289,82 @@
+     )
+ }
+ 
++// Layout v5 uses the superblock offset width for filtered chunk sizes.
++// FA/EA already derive it from their element headers; v2 B-trees derive it
++// from record_size, which handles both v4's variable width and v5's width.
++fn read_btree_v2_chunks<S: Source + ?Sized>(
++    source: &S,
++    address: StoredAddress,
++    dimensions: &[u64],
++    element_size: u64,
++    offset_size: u8,
++    length_size: u8,
++) -> Result<Vec<ChunkInfo>, FormatError> {
++    let invalid = || FormatError::ChunkedReadError("invalid v2 B-tree chunk index".into());
++    let header = BTreeV2Header::parse_from_source(source, address.get(), offset_size, length_size)?;
++    if !matches!(header.tree_type, 10 | 11)
++        || header.depth > 32
++        || header.total_records > 1_000_000
++        || header.node_size < 10
++        || header.node_size > 8 * 1024 * 1024
++        || header.record_size == 0
++    {
++        return Err(invalid());
++    }
++    let os = offset_size as usize;
++    let rank = dimensions.len();
++    let filtered = header.tree_type == 11;
++    let prefix = os
++        .checked_add(rank.checked_mul(8).ok_or_else(invalid)?)
++        .and_then(|n| n.checked_add(if filtered { 4 } else { 0 }))
++        .ok_or_else(invalid)?;
++    let width = (header.record_size as usize)
++        .checked_sub(prefix)
++        .ok_or_else(invalid)?;
++    if (filtered && !(1..=8).contains(&width)) || (!filtered && width != 0) {
++        return Err(invalid());
++    }
++    let logical_size = dimensions
++        .iter()
++        .try_fold(element_size, |n, d| n.checked_mul(*d).ok_or_else(invalid))?;
++    let records = collect_btree_v2_records_from_source(source, &header, offset_size, length_size)?;
++    if records.len() as u64 != header.total_records {
++        return Err(invalid());
++    }
++    records
++        .into_iter()
++        .map(|record| {
++            let raw = record.data;
++            let address = StoredAddress::new(read_offset(&raw, 0, offset_size)?);
++            let (size, mask, mut pos) = if filtered {
++                let mut size = [0; 8];
++                size[..width].copy_from_slice(&raw[os..os + width]);
++                let pos = os + width;
++                (
++                    u64::from_le_bytes(size),
++                    u32::from_le_bytes(raw[pos..pos + 4].try_into().map_err(|_| invalid())?),
++                    pos + 4,
++                )
++            } else {
++                (logical_size, 0, os)
++            };
++            let mut offsets = Vec::with_capacity(rank);
++            for dim in dimensions {
++                let scaled =
++                    u64::from_le_bytes(raw[pos..pos + 8].try_into().map_err(|_| invalid())?);
++                offsets.push(scaled.checked_mul(*dim).ok_or_else(invalid)?);
++                pos += 8;
++            }
++            Ok(ChunkInfo {
++                address,
++                chunk_size: StoredChunkSize::v4(size),
++                filter_mask: mask,
++                offsets,
++            })
++        })
++        .collect()
++}
++
+ /// Walks `index` and reports one [`ChunkInfo`] per chunk the file holds.
+ ///
+ /// Returns an empty vector for an index with no address, which is a dataset
+@@ -1296,9 +1373,8 @@
+ /// # Errors
+ ///
+ /// Returns [`FormatError::ChunkedReadError`] for a chunked layout with no
+-/// dimensions and for a version 2 B-tree index, the one index with no walker
+-/// here, and propagates what the other walkers report for a malformed
+-/// structure.
++/// dimensions or invalid chunk index metadata, and propagates errors from
++/// the index walkers.
+ pub(crate) fn collect_chunks_for_layout_from_source<S: Source + ?Sized>(
+     source: &S,
+     index: ChunkIndexLayout,
+@@ -1377,9 +1453,14 @@
+                 length_size,
+             )
+         }
+-        ChunkIndexLayout::BTreeV2 { .. } => Err(FormatError::ChunkedReadError(
+-            "a version 2 B-tree chunk index cannot be enumerated".into(),
+-        )),
++        ChunkIndexLayout::BTreeV2 { .. } => read_btree_v2_chunks(
++            source,
++            addr,
++            &chunk_dimensions[..rank],
++            elem_size,
++            offset_size,
++            length_size,
++        ),
+     }
+ }
+ 
+@@ -1392,8 +1473,7 @@
+ /// [`BytesSource`](crate::source::BytesSource).
+ ///
+ /// Returns an empty vector when the index address is undefined (a chunked
+-/// dataset with no storage allocated yet). Errors for a version-2 B-tree
+-/// (index type 5), the one index the walkers do not cover.
++/// dataset with no storage allocated yet).
+ #[cfg(feature = "std")]
+ pub(crate) fn enumerate_chunks_from_source<S: Source + ?Sized>(
+     source: &S,
+@@ -1855,11 +1935,14 @@
+                     length_size,
+                 )?
+             }
+-            ChunkIndexLayout::BTreeV2 { .. } => {
+-                return Err(FormatError::ChunkedReadError(
+-                    "a version 2 B-tree chunk index cannot be enumerated".into(),
+-                ));
+-            }
++            ChunkIndexLayout::BTreeV2 { .. } => read_btree_v2_chunks(
++                &crate::source::BytesSource::new(file_data),
++                addr,
++                &chunk_dimensions[..rank],
++                u64::from(elem_width.get()),
++                offset_size,
++                length_size,
++            )?,
+         };
+         cache.populate_index(&chunks, rank);
+         chunks
+--- a/src/btree_v2.rs
++++ b/src/btree_v2.rs
+@@ -359,7 +359,8 @@
+     #[cfg(feature = "checksum")]
+     {
+         let checksum_pos = pos + total;
+-        if file_data.len() >= checksum_pos + 4 {
++        ensure_len(file_data, checksum_pos, 4)?;
++        {
+             let stored = LittleEndian::read_u32(&file_data[checksum_pos..checksum_pos + 4]);
+             let computed = crate::checksum::jenkins_lookup3(&file_data[offset..checksum_pos]);
+             if computed != stored {
+@@ -433,6 +434,19 @@
+         pos += nrec_width;
+         pos += total_nrec_width; // skip total-records-in-subtree
+         children.push((addr, child_nrec));
++    }
++
++    #[cfg(feature = "checksum")]
++    {
++        ensure_len(node, pos, 4)?;
++        let stored = LittleEndian::read_u32(&node[pos..pos + 4]);
++        let computed = crate::checksum::jenkins_lookup3(&node[..pos]);
++        if computed != stored {
++            return Err(FormatError::ChecksumMismatch {
++                expected: stored,
++                computed,
++            });
++        }
+     }
+ 
+     Ok(children)

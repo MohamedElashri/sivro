@@ -31,6 +31,11 @@ pub(super) fn write_all(dir: &Path) {
         dir.join("classic.h5"),
     )
     .unwrap();
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/hdf5/layout-v5.h5"),
+        dir.join("layout-v5.h5"),
+    )
+    .unwrap();
     let big = "9007199254740993";
     fixture(
         &dir.join("people.parquet"),

@@ -34,7 +34,7 @@ use std::{
 fn error(e: impl std::fmt::Display) -> AppError {
     let message = e.to_string();
     if message.contains("invalid data layout version") {
-        return AppError::new(ErrorCode::UnsupportedFormat, "This HDF5 layout version is unsupported by the bundled reader. Choose another dataset or a copy saved with HDF5 1.14 compatible layouts.");
+        return AppError::new(ErrorCode::UnsupportedFormat, "This HDF5 layout version is unsupported by the bundled reader. Choose another dataset or a copy saved with layout v3, v4 or v5.");
     }
     AppError::new(
         if message.contains("budget") {

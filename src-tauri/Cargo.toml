@@ -25,7 +25,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 same-file = "1"
 # Pure Rust HDF5 parsing/writing; no system HDF5 or runtime plugins.
-hdf5-pure = "=0.47.0"
+hdf5-pure = { version = "=0.47.0", path = "vendor/hdf5-pure" }
 # Filesystem free-space checks and cross-platform scratch-directory leases.
 fs2 = "=0.4.3"
 # No `bundled` by default: local + CI builds link prebuilt DuckDB static

@@ -36,7 +36,7 @@ fn index(info: &DatasetDescriptor, name: &str) -> usize {
 async fn hdf5_h5py_classic_modern_and_userblock_metadata_exact_records() {
     let dir = Directory::new();
     let state = state(&dir);
-    for name in ["classic.h5", "modern.hdf5", "userblock.hdf"] {
+    for name in ["classic.h5", "modern.hdf5", "userblock.hdf", "types-v5.h5"] {
         let source = fixture_path(name);
         let before = std::fs::read(&source).unwrap();
         let root = state
@@ -501,27 +501,239 @@ pub(super) fn write_fixture(path: &Path) {
     b.write(path).unwrap();
 }
 #[tokio::test]
-async fn hdf5_layout_v5_is_explicit_without_hiding_other_datasets() {
+async fn hdf5_v4_v5_all_chunk_indexes_and_userblocks_are_exact() {
+    use hdf5_pure::ChunkIndex;
     let dir = Directory::new();
     let state = state(&dir);
-    let source = fixture_path("layout-v5.h5");
-    let info = state
-        .inspect_hdf5(source.to_str().unwrap().into(), "/".into())
+    for filename in ["layout-v5.h5", "layout-v5-userblock.h5", "indexes-v4.h5"] {
+        let source = fixture_path(filename);
+        let before = std::fs::read(&source).unwrap();
+        let low = hdf5_pure::File::from_bytes(before.clone()).unwrap();
+        for group in ["filtered", "plain"] {
+            let metadata = state
+                .inspect_hdf5(source.to_str().unwrap().into(), format!("/{group}"))
+                .await
+                .unwrap();
+            assert!(
+                metadata.objects.iter().all(|o| o.selectable),
+                "{filename}: {metadata:?}"
+            );
+            for (name, kind) in [
+                ("single", ChunkIndex::SingleChunk),
+                ("fixed", ChunkIndex::FixedArray),
+                ("extensible", ChunkIndex::ExtensibleArray),
+                ("extensible_inner", ChunkIndex::ExtensibleArray),
+                ("btree", ChunkIndex::BTreeV2),
+            ] {
+                let path = format!("/{group}/{name}");
+                let ds = low.dataset(&path).unwrap();
+                assert_eq!(ds.chunk_index().unwrap(), Some(kind));
+                assert_eq!(
+                    ds.read_raw_rows(1, 2).unwrap(),
+                    ds.read_raw().unwrap()[64..192]
+                );
+                assert!(!ds.chunks().unwrap().is_empty());
+                let info = open_hdf(
+                    &state,
+                    &source,
+                    Hdf5Options {
+                        row_axis: 1,
+                        column_axis: Some(0),
+                        indices: vec!["0".into(), "0".into()],
+                        row_start: "2".into(),
+                        row_limit: Some(2),
+                        ..selection(&path)
+                    },
+                )
+                .await
+                .unwrap();
+                let p = page(&state, &info, query(&info)).await;
+                assert_eq!(p.rows.len(), 2);
+                for (r, row) in p.rows.iter().enumerate() {
+                    for (c, cell) in row.iter().enumerate() {
+                        assert_eq!(
+                            text(cell),
+                            Some(
+                                (9007199254740993u64 + c as u64 * 8 + r as u64 + 2)
+                                    .to_string()
+                                    .as_str()
+                            )
+                        );
+                    }
+                }
+                state.close(info.session_id).await.unwrap();
+            }
+        }
+        for (path, kind, width, rows) in [
+            ("/btree_deep", ChunkIndex::BTreeV2, 40, 40),
+            ("/implicit", ChunkIndex::Implicit, 8, 6),
+        ] {
+            let ds = low.dataset(path).unwrap();
+            assert_eq!(ds.chunk_index().unwrap(), Some(kind));
+            let raw = ds.read_raw().unwrap();
+            assert_eq!(raw.len(), width * rows * 8);
+            assert_eq!(
+                i64::from_le_bytes(raw[raw.len() - 8..].try_into().unwrap()),
+                9007199254740993 + (width * rows - 1) as i64
+            );
+            assert_eq!(ds.read_raw_rows(1, 2).unwrap(), raw[width * 8..width * 24]);
+            let info = open_hdf(
+                &state,
+                &source,
+                Hdf5Options {
+                    column_axis: Some(1),
+                    row_start: "1".into(),
+                    row_limit: Some(2),
+                    ..selection(path)
+                },
+            )
+            .await
+            .unwrap();
+            let p = page(&state, &info, query(&info)).await;
+            assert_eq!(
+                text(&p.rows[1][width - 1]),
+                Some(
+                    (9007199254740993u64 + 3 * width as u64 - 1)
+                        .to_string()
+                        .as_str()
+                )
+            );
+            state.close(info.session_id).await.unwrap();
+        }
+        for (path, kind) in [
+            ("/fixed_paged", ChunkIndex::FixedArray),
+            ("/extensible_paged", ChunkIndex::ExtensibleArray),
+        ] {
+            let ds = low.dataset(path).unwrap();
+            assert_eq!(ds.chunk_index().unwrap(), Some(kind));
+            assert_eq!(ds.chunks().unwrap().len(), 10000);
+            let raw = ds.read_raw_rows(9998, 2).unwrap();
+            assert_eq!(
+                i64::from_le_bytes(raw[8..].try_into().unwrap()),
+                9007199254750992
+            );
+            let info = open_hdf(
+                &state,
+                &source,
+                Hdf5Options {
+                    row_start: "9998".into(),
+                    row_limit: Some(2),
+                    ..selection(path)
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                text(&page(&state, &info, query(&info)).await.rows[1][0]),
+                Some("9007199254750992")
+            );
+            state.close(info.session_id).await.unwrap();
+        }
+        let info = open_hdf(
+            &state,
+            &source,
+            Hdf5Options {
+                column_axis: Some(1),
+                ..selection("/unallocated")
+            },
+        )
         .await
         .unwrap();
-    let newer = info
-        .objects
-        .iter()
-        .find(|o| o.name == "new_chunks")
+        let p = page(&state, &info, query(&info)).await;
+        assert!(p.rows.iter().flatten().all(|c| text(c) == Some("-7")));
+        state.close(info.session_id).await.unwrap();
+        if filename != "indexes-v4.h5" {
+            let info = state
+                .inspect_hdf5(source.to_str().unwrap().into(), "/".into())
+                .await
+                .unwrap();
+            assert!(
+                !info
+                    .objects
+                    .iter()
+                    .find(|o| o.name == "huge_chunk")
+                    .unwrap()
+                    .selectable
+            );
+            assert_eq!(
+                open_hdf(&state, &source, selection("/huge_chunk"))
+                    .await
+                    .unwrap_err()
+                    .code,
+                ErrorCode::ResourceLimit
+            );
+        }
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+    }
+}
+
+#[tokio::test]
+async fn hdf5_v5_corrupt_trees_and_chunks_fail_and_exports_stay_exact() {
+    let dir = Directory::new();
+    let state = state(&dir);
+    let original = std::fs::read(fixture_path("layout-v5.h5")).unwrap();
+    let low = hdf5_pure::File::from_bytes(original.clone()).unwrap();
+    let chunk = low.dataset("/btree_deep").unwrap().chunks().unwrap()[0].address as usize;
+    let internal = original
+        .windows(6)
+        .position(|w| w == b"BTIN\0\x0b")
         .unwrap();
-    assert!(!newer.selectable);
-    assert!(newer.reason.as_ref().unwrap().contains("layout version"));
-    let readable = open_hdf(&state, &source, selection("/readable"))
+    for (name, offset) in [("bad-tree.h5", internal + 6), ("bad-chunk.h5", chunk)] {
+        let mut damaged = original.clone();
+        damaged[offset] ^= 0x55;
+        let path = dir.0.join(name);
+        std::fs::write(&path, damaged).unwrap();
+        assert_eq!(
+            open_hdf(
+                &state,
+                &path,
+                Hdf5Options {
+                    column_axis: Some(1),
+                    ..selection("/btree_deep")
+                }
+            )
+            .await
+            .unwrap_err()
+            .code,
+            ErrorCode::FormatMismatch
+        );
+    }
+    let info = open_hdf(
+        &state,
+        &fixture_path("layout-v5.h5"),
+        Hdf5Options {
+            column_axis: Some(1),
+            row_start: "1".into(),
+            row_limit: Some(2),
+            ..selection("/filtered/btree")
+        },
+    )
+    .await
+    .unwrap();
+    let json = dir.0.join("v5.json");
+    text_export(&state, &info, &json, ExportFormat::Json, query(&info))
         .await
         .unwrap();
+    assert!(std::fs::read_to_string(json)
+        .unwrap()
+        .contains("9007199254741001"));
+    let out = dir.0.join("v5.h5");
+    text_export(&state, &info, &out, ExportFormat::Hdf5, query(&info))
+        .await
+        .unwrap();
+    let restored = open_hdf(
+        &state,
+        &out,
+        Hdf5Options {
+            columns: true,
+            ..selection("/table")
+        },
+    )
+    .await
+    .unwrap();
     assert_eq!(
-        text(&page(&state, &readable, query(&readable)).await.rows[0][0]),
-        Some("7")
+        page(&state, &restored, query(&restored)).await.rows,
+        page(&state, &info, query(&info)).await.rows
     );
 }
 
