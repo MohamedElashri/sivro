@@ -31,52 +31,28 @@ Grid previews are bounded; expansion/copy is capped at 1 MiB.
 
 ## Arrow IPC and Feather V2
 
-`.arrow`, `.ipc`, `.feather` and `.arrows` accept either an Arrow IPC file or
-stream; the framing determines which reader is used. Feather V2 uses the IPC
-file format. Legacy Feather V1 is rejected with conversion guidance. Modern
-and legacy IPC stream framing, multiple record batches, dictionary updates,
-uncompressed data, LZ4 frames and ZSTD compression are supported. Sivro reads
-local record-batch tables; Arrow Flight services and tensor messages are not
-inputs.
+Open `.arrow`, `.ipc`, `.feather` or `.arrows`; framing selects the file/stream
+reader. Feather V2, legacy stream framing, multiple batches, dictionaries,
+LZ4 and ZSTD are supported. Feather V1, Flight and tensor messages are not.
+File details show the original schema and metadata.
 
-All batches are validated and staged into a private DuckDB database before the
-file opens. The grid supports paging, exact counts, search, filters, sorting,
-profiles, row inspection, copying, refresh and every export format. File details
-show the original Arrow schema types and schema/field metadata. Blank and
-duplicate column labels retain separate IDs. Source files are never modified.
+Common scalars, exact decimals, lists, structs and maps use native query types.
+Types without an exact query representation use labelled text fallbacks,
+including Decimal256/negative-scale decimals, Date64, nanosecond times,
+zoned nanosecond timestamps, durations, intervals, unions, list views and
+run-end encoding. Dictionaries decode to values; extension types use storage
+types. Nested types containing fallbacks become text as a whole.
 
-Signed/unsigned integers, exact decimals with nonnegative scale up to 128 bits,
-booleans, floating-point values, text, binary, supported dates/times, lists,
-structs and maps use native query types. Float16 widens exactly to Float32;
-dictionaries are decoded to their values and all-null fields become nullable
-text. Lists/structs/maps whose children require text conversion are represented
-as text as a whole. Types the query engine cannot represent exactly—including
-Decimal256, negative-scale decimals, nanosecond times and zoned nanosecond
-timestamps, Date64, durations, intervals, unions, list views and run-end encoded
-arrays—use Arrow's text representation with a visible warning and text filter
-semantics. This preserves numeric precision without silently rounding values.
-Extension annotations are available in metadata; the explorer uses their storage
-types rather than implementing application-specific extension semantics.
+Limits: 256 MiB input, 128 MiB per encoded/decoded message or batch, 8 MiB
+metadata/footer, and 1 GiB cumulative decoded buffers/scratch. Opening validates
+and stages every batch within the shared time budget.
 
-The default input limit is 256 MiB, each encoded/decoded message and decoded
-batch is limited to 128 MiB, metadata messages and file footers to 8 MiB, and
-cumulative decoded buffers and scratch staging to 1 GiB each. Logical array
-lengths are additionally bounded by the batch budget. Compressed lengths and
-LZ4 output are checked before decoding. These are application budgets, not
-hard process-memory isolation. Opening obeys the shared time budget.
-
-**Arrow / Feather V2** export writes an uncompressed IPC file (`.arrow`, `.ipc`
-or `.feather`); **Arrow IPC stream** writes an uncompressed stream (`.arrows`,
-`.ipc` or `.arrow`). Exports preserve the loaded projection, filtering, sort,
-row cap and current query types. Dictionary encoding, original metadata,
-extension annotations, timezone labels and physical layouts are not preserved;
-text fallbacks remain text. Zoned native timestamps retain their instants in
-DuckDB's timezone representation. Binary stays binary and NaN/Infinity remain
-floating-point values. `HUGEINT`/`UHUGEINT` use exact `DECIMAL(38,0)` and fail if
-they exceed its range. `JSON_NUMBER` fields are rejected rather than rounded;
-`JSON_VALUE` fields are exported as text. SQLite uses the same homogeneous-column
-and exact-integer checks as its Parquet export. Destinations and source aliases
-are never overwritten, and cancellation removes partial output.
+Export **Arrow / Feather V2** for an uncompressed IPC file or **Arrow IPC stream**
+for a stream. Both preserve the loaded view and current query types, including
+binary and NaN/Infinity. Original metadata, dictionaries, extensions and timezone
+labels are not retained. Wide integers must fit `DECIMAL(38,0)`; exact JSON-number
+columns are rejected, and nested JSON becomes text. Mixed SQLite columns follow
+Parquet's homogeneous-type and exact-integer checks.
 
 ## CSV and TSV
 

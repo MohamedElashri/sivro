@@ -49,10 +49,8 @@ TypeScript/Vite frontend in `src`.
   generation so late replies are dropped.
 - **Readers** (`adapters/`): Parquet, Arrow IPC/Feather V2, CSV/TSV, JSON/JSONL
   record tables and Excel run on DuckDB through the `TableSource` trait; JSON and Excel data is
-  first staged into session scratch (`stage.rs`). Arrow files/streams are
-  preflighted for metadata, buffer and decompression limits, then staged through
-  DuckDB's native Arrow bridge (`arrow.rs`); Arrow and Parquet libraries share
-  version 58 with DuckDB's Arrow interface. JSON documents use a bounded
+  first staged into session scratch (`stage.rs`). Arrow uses bounded IPC reads
+  and DuckDB's native Arrow bridge (`arrow.rs`). JSON documents use a bounded
   in-memory tree. SQLite uses its own read-only rusqlite connection with an
   authorizer that allows only reads.
 - **Queries** (`query/`): the frontend sends typed filters, column IDs, sorts
