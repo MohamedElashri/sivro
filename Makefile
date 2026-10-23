@@ -29,7 +29,7 @@ DEPS       := node_modules/.package-lock.json
 DIST       := dist/index.html
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev build app frontend check fmt fmt-check lint test \
+.PHONY: help install dev build app app-debug frontend check fmt fmt-check lint test \
         test-frontend test-backend test-libs test-e2e test-e2e-offline ci \
         perf clean distclean
 
@@ -52,6 +52,9 @@ build: $(DEPS) ## Build release packages (src-tauri/target/release/bundle)
 
 app: $(DEPS) ## Build the release binary without packaging (for test-e2e)
 	$(DUCKDB) tauri build --no-bundle $(FEATURES)
+
+app-debug: $(DEPS) ## Build the embedded-assets debug app for GUI tests
+	$(DUCKDB) tauri build --debug --no-bundle $(FEATURES)
 
 frontend: $(DIST) ## Typecheck and build the frontend
 

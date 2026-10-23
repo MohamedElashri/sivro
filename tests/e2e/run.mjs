@@ -26,8 +26,10 @@ const base = `http://127.0.0.1:${port}`;
 // --offline: prepare fixtures normally, then rerun inside a user + network
 // namespace whose only interface is loopback (for WebDriver).
 if (args.includes("--offline")) {
-  execFileSync("node", ["scripts/with-duckdb.mjs", "cargo", "test", "--quiet", "--manifest-path", "src-tauri/Cargo.toml", "--lib", "write_e2e_fixtures", "--", "--ignored"],
-    { cwd: root, env: { ...process.env, SIVRO_E2E_DIR: fixtures }, stdio: ["ignore", "ignore", "inherit"] });
+  if (!option("--fixtures")) {
+    execFileSync("node", ["scripts/with-duckdb.mjs", "cargo", "test", "--quiet", "--manifest-path", "src-tauri/Cargo.toml", "--lib", "write_e2e_fixtures", "--", "--ignored"],
+      { cwd: root, env: { ...process.env, SIVRO_E2E_DIR: fixtures }, stdio: ["ignore", "ignore", "inherit"] });
+  }
   const inner = ["node", JSON.stringify(new URL(import.meta.url).pathname), "--fixtures", JSON.stringify(fixtures), "--bin", JSON.stringify(bin), "--offline-check"].join(" ");
   const check = "(timeout 3 sh -c 'getent hosts example.com' >/dev/null && echo 'network reachable' && exit 1) || true";
   execFileSync("unshare", ["-rn", "sh", "-c", `ip link set lo up && ${check} && echo 'offline namespace: loopback only, no DNS' && ${inner}`], { stdio: "inherit" });

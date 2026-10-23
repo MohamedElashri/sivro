@@ -21,7 +21,10 @@ DuckDB archives; later builds work offline.
 
 ## Make targets
 
-CI runs the same targets; `make help` lists them all.
+CI runs formatting/frontend checks first, then Clippy, backend and GUI tests
+on one Linux runner. Cargo, DuckDB and WebDriver caches are reused; GUI tests
+use `make app-debug`, while releases still test the release binary.
+`make help` lists all targets.
 
 | Target | Does |
 |---|---|
