@@ -85,6 +85,8 @@ async function chooseTheme(value) {
 }
 
 const cases = [
+  { file: "people.h5", dialog: "confirm-hdf5", expect: ["9007199254740993", "Alice"] },
+  { file: "classic.h5", dialog: "confirm-hdf5", slice: true, expect: ["9007199254741007", "9007199254741015"] },
   { file: "people.parquet", expect: ["9007199254740993", "Alice"] },
   { file: "people.csv", dialog: "confirm-delimited", expect: ["9007199254740993", "Bob"], count: true },
   { file: "people.tsv", dialog: "confirm-delimited", expect: ["9007199254740993", "Bob"], count: true },
@@ -147,6 +149,20 @@ try {
     try {
       await click(`.recent-item[data-path="${attr(path)}"]`); steps.push("open");
       if (test.dialog) {
+        if (test.slice) {
+          await waitFor("HDF5 groups", present('[data-action="browse-hdf5"][data-group="/arrays"]'));
+          await click('[data-action="browse-hdf5"][data-group="/arrays"]');
+          await waitFor("HDF5 cube", present('[data-hdf5="object"][value="/arrays/cube"]:not([disabled])'));
+          await click('[data-hdf5="object"][value="/arrays/cube"]');
+          for (const [field, value] of [["index", "2"], ["rowStart", "1"], ["rowLimit", "1"]]) {
+            await exec("const input=document.querySelector('[data-hdf5=\"'+arguments[0]+'\"]'); input.value=arguments[1]; input.dispatchEvent(new Event('input',{bubbles:true}))", field, value);
+          }
+          steps.push("browse group", "slice cube");
+          if (args.includes("--keep")) {
+            const shot = await wd("GET", `/session/${sid}/screenshot`);
+            writeFileSync(join(work, "hdf5-picker.png"), Buffer.from(shot, "base64"));
+          }
+        }
         await waitFor(`${test.file} dialog`, present(`[data-action="${test.dialog}"]:not([disabled])`));
         await click(`[data-action="${test.dialog}"]`); steps.push("confirm dialog");
       }
@@ -220,4 +236,4 @@ if (failure) {
 // The app may still flush its profile while exiting; retry the cleanup.
 if (args.includes("--keep")) console.log(`kept fixtures and profile: ${work}`);
 else rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-console.log(`GUI end-to-end: ${cases.length} formats passed with ${bin}`);
+console.log(`GUI end-to-end: ${cases.length} input cases passed with ${bin}`);

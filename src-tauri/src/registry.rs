@@ -12,6 +12,7 @@ use std::{
 
 pub fn extension_format(path: &Path) -> Option<FormatKind> {
     match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "h5" | "hdf5" | "hdf" => Some(FormatKind::Hdf5),
         "parquet" | "pq" => Some(FormatKind::Parquet),
         "csv" => Some(FormatKind::Csv),
         "tsv" => Some(FormatKind::Tsv),
@@ -27,7 +28,7 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
     let expected = extension_format(path).ok_or_else(|| {
         AppError::new(
             ErrorCode::UnsupportedFormat,
-            "This extension is outside the seven supported input families",
+            "This extension is not a supported input format",
         )
     })?;
     if !std::fs::metadata(path).map_err(AppError::io)?.is_file() {
@@ -43,7 +44,33 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
     file.read_exact(&mut head[..read]).map_err(AppError::io)?;
     let zip = read >= 4 && (&head[..4] == b"PK\x03\x04" || &head[..4] == b"PK\x05\x06");
     let cfb = read >= 8 && head[..8] == [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
-    let detected = if read >= 4 && &head[..4] == b"PAR1" {
+    let mut hdf5 = read >= 8 && &head[..8] == b"\x89HDF\r\n\x1a\n";
+    // HDF5 user blocks put the signature at 512 * 2^n, rather than byte zero.
+    if !hdf5 && expected == FormatKind::Hdf5 {
+        let mut offset = 512u64;
+        while offset.checked_add(8).is_some_and(|end| end <= meta.len()) {
+            file.seek(SeekFrom::Start(offset)).map_err(AppError::io)?;
+            let mut signature = [0u8; 8];
+            file.read_exact(&mut signature).map_err(AppError::io)?;
+            if &signature == b"\x89HDF\r\n\x1a\n" {
+                hdf5 = true;
+                break;
+            }
+            let Some(next) = offset.checked_mul(2) else {
+                break;
+            };
+            offset = next;
+        }
+    }
+    if expected == FormatKind::Hdf5 && !hdf5 {
+        return Err(AppError::new(
+            ErrorCode::FormatMismatch,
+            "This file has no valid HDF5 signature (including user blocks)",
+        ));
+    }
+    let detected = if hdf5 {
+        Some(FormatKind::Hdf5)
+    } else if read >= 4 && &head[..4] == b"PAR1" {
         Some(FormatKind::Parquet)
     } else if read == 16 && &head == b"SQLite format 3\0" {
         Some(FormatKind::Sqlite)
@@ -120,6 +147,7 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
                 | FormatKind::Jsonl
                 | FormatKind::Excel
                 | FormatKind::Sqlite
+                | FormatKind::Hdf5
         ),
         message: if expected == FormatKind::Parquet {
             "Parquet signature verified"
@@ -127,6 +155,8 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
             "UTF-8 prefix verified; confirm a strict delimited parsing preview before opening"
         } else if matches!(expected, FormatKind::Json | FormatKind::Jsonl) {
             "UTF-8 prefix verified; the whole input is validated while opening"
+        } else if expected == FormatKind::Hdf5 {
+            "HDF5 signature verified; choose a dataset or column group"
         } else if expected == FormatKind::Excel {
             "Workbook container verified; choose a worksheet and header row"
         } else if expected == FormatKind::Sqlite {

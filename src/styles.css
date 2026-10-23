@@ -716,6 +716,7 @@ th.sorted { background: var(--selection); }
 .delimited-overlay { z-index: 120; }
 .delimited-modal { width: min(1100px, 94vw); max-height: 92vh; }
 .delimited-modal .modal-body { overflow: auto; }
+.hdf5-modal .modal-body > * { flex-shrink: 0; }
 .delimited-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin: 16px 0; }
 .delimited-settings label { display: flex; flex-direction: column; gap: 6px; }
 .delimited-settings small, .delimited-preview small { opacity: .7; }

@@ -1,6 +1,6 @@
 # Formats and behaviour
 
-Sivro reads Parquet (`.parquet`, `.pq`), CSV (`.csv`), TSV (`.tsv`), JSON
+Sivro reads Parquet (`.parquet`, `.pq`), HDF5 (`.h5`, `.hdf5`, `.hdf`), CSV (`.csv`), TSV (`.tsv`), JSON
 (`.json`), JSON Lines (`.jsonl`, `.ndjson`), Excel (`.xlsx`, `.xlsm`, `.xlsb`,
 `.xls`) and SQLite (`.sqlite`, `.sqlite3`, `.db`). It never modifies a source.
 Release limitations are summarized in the [changelog](../CHANGELOG.md).
@@ -10,7 +10,7 @@ Release limitations are summarized in the [changelog](../CHANGELOG.md).
 Every format shares one workflow: multiple tabs, recent files, drag/drop,
 schema and row-group details, a paged grid, search, filters, sorting, column
 profiles, nested row inspection, copying and a 1,500-row sample generator.
-Exports support Parquet, CSV, TSV, **JSON arrays** and **JSON Lines**. Queries
+Exports support Parquet, HDF5, CSV, TSV, **JSON arrays** and **JSON Lines**. Queries
 use backend-owned sessions and column IDs; exact numbers travel as tagged text. The first page uses the Parquet metadata
 count for an unfiltered view. Filtered views offer **Count rows** on demand, while profiles
 are computed when requested. **Refresh** explicitly reopens a changed source
@@ -26,6 +26,73 @@ and `{ "$binary_hex": "...", "byteCount": "..." }` in JSON/JSONL. JSON exports r
 non-finite numbers; Parquet retains native types. Row copying keeps large
 numbers as JSON numbers and uses strings for NaN/Infinity with a visible note.
 Grid previews are bounded; expansion/copy is capped at 1 MiB.
+
+## HDF5
+
+HDF5 files open in a **group/dataset browser**. Navigate groups, inspect their
+attributes and dataset types, shapes, storage layouts, chunk dimensions and
+filter IDs. Choose a dataset, separate row/column axes, zero-based fixed indices
+for the other dimensions, and an optional row start/limit. A scalar is one row;
+an empty or null dataspace has no rows. Compound records use their member names
+as columns; choose no column axis. **Open this group as columns** combines the
+immediate datasets only when they are equally sized one-dimensional arrays.
+**Dataset:** in the toolbar reopens the picker. Refresh freezes the confirmed
+selection; counts, filters, sorting, profiles, copying and exports refer to that
+selection, not to the entire HDF5 container.
+
+The reader uses positioned, read-only I/O and stages the selection into session
+scratch. Signed/unsigned integers up to 128 bits retain exact values, including
+nonstandard integer precision/offset and byte order. Standard 16/32/64-bit
+floats become DOUBLE (Float16/32 widen exactly); strings require valid UTF-8.
+FALSE/TRUE enumerations become booleans; other enums retain their numeric codes
+and expose labels in the original datatype metadata. Compound members become
+columns, while nested records, fixed arrays and variable-length sequences use
+exact JSON text. Fixed arrays retain their inner dimensions. Nested non-finite
+floats use strings in JSON. Opaque values, object/region references, time types
+and nonstandard floating representations remain bytes; references are never
+dereferenced. Attribute values are shown where the library can decode them;
+other attribute types remain visible with an unavailable-value label.
+
+The bundled pure Rust reader supports classic and modern HDF5 layout messages
+v3/v4, user blocks, compact/contiguous/chunked storage, deflate, shuffle,
+Fletcher32, N-bit, scale-offset and LZF. Original lossy scale-offset precision
+cannot be recovered. **HDF5 2.0 layout v5 is unsupported** and disabled in the
+picker; supported datasets in the same container remain available. Soft and
+external links are omitted, and external raw storage, virtual datasets, SZIP
+and unknown filter plugins are refused. No native HDF5 library or runtime
+plugins are installed or loaded. HDF4 and automatic reconstruction of pandas,
+PyTables or MATLAB application objects are outside this reader's scope.
+
+Default budgets: 4 GiB input, 64 MiB per positioned read/decoded chunk/leading
+row, 8 MiB per metadata read or response, rank 32, 4,096 objects/columns and
+2,000,000 selected cells. Decoded values use at most half the 1 GiB scratch
+budget; cumulative positioned reads are capped at four scratch budgets, and
+the shared opening deadline applies. A slice still reads each needed leading
+row and touched chunk, so a very large inner plane may exceed the budget even
+when the selected table is small. These are application budgets, not hard RSS
+isolation. Choose a smaller row window or a compatibility copy when needed.
+
+**HDF5 export** writes a new file with a `/table` group containing numbered
+column datasets, plus `/_sivro_validity` uint8 masks (0 = NULL, 1 = present).
+Columns use native integers/floats/booleans where possible. Decimal, temporal,
+exact JSON numbers, nested JSON and binary values use exact text with validated
+Sivro type annotations; binary uses hex. Text containing NUL uses reversible
+UTF-8 hex encoding. Dataset attributes `sivro.name`, `sivro.type`,
+`sivro.validity` and optional `sivro.encoding` preserve the table interpretation;
+`/table` carries integer attribute `sivro.table=1`. Open `/table` as columns to
+restore it. Names are numbered with padding to retain projection order; blank
+or duplicate labels use column IDs, as in other exports. The source hierarchy,
+attributes and physical layouts are not reproduced. Other HDF5 tools can read
+the datasets directly, but must apply these annotations to restore nulls and
+logical types. SQLite columns that mix storage classes or mix wide integers
+with reals are refused rather than coerced.
+
+HDF5 exports share projection, filters, ordering, row caps, cancellation and
+no-overwrite publication with other outputs. Their collected cell and encoded
+payload budgets are each 64 MiB by default; cells must fit the full-cell limit.
+A budget failure or cancellation publishes no partial file. Choose fewer rows
+or columns for a large export. JSON/JSONL exports of HDF5 nested values retain
+exact JSON and binary tags; Parquet retains the existing exact-number limits.
 
 ## CSV and TSV
 

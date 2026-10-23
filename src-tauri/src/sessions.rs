@@ -413,6 +413,25 @@ impl AppState {
         .map_err(|_| AppError::internal())?
     }
 
+    pub async fn inspect_hdf5(
+        self: &Arc<Self>,
+        path: String,
+        group: String,
+    ) -> AppResult<Hdf5Info> {
+        let permit = self.admit().await?;
+        let owner = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let path = registry::resolve(&path, &OpenOptions::default())?;
+            if registry::extension_format(&path) != Some(FormatKind::Hdf5) {
+                return Err(AppError::invalid("Choose an HDF5 file"));
+            }
+            crate::adapters::hdf5::inspect(&path, &group, &owner.policy)
+        })
+        .await
+        .map_err(|_| AppError::internal())?
+    }
+
     pub fn discard_preview(&self, token: &str) -> AppResult<()> {
         if token.len() > 128 {
             return Err(AppError::invalid("Invalid preview handle"));

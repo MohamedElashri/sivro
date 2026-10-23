@@ -1,4 +1,4 @@
-//! Hardening: all seven families through one session API, repeated
+//! Hardening: all input families through one session API, repeated
 //! open/close, interleaved and cancelled work, refresh, scratch quotas,
 //! source-alias export guards, and the self-contained DuckDB engine.
 use super::e2e_fixtures::{write_all, FILES};
@@ -29,6 +29,15 @@ pub(super) async fn open_any(
                     .map(|s| s.name)
                     .unwrap_or_default(),
                 header_row: Some(1),
+            }),
+            ..Default::default()
+        }
+    } else if name.ends_with(".h5") {
+        OpenOptions {
+            hdf5: Some(Hdf5Options {
+                object: "/".into(),
+                columns: true,
+                ..Default::default()
             }),
             ..Default::default()
         }
@@ -334,6 +343,7 @@ async fn exports_from_every_family_refuse_sources_aliases_and_existing_files() {
         }
         // The source itself is refused (its own extension, so the format check passes).
         let own = match path.extension().unwrap().to_str().unwrap() {
+            "h5" => ExportFormat::Hdf5,
             "parquet" => ExportFormat::Parquet,
             "csv" => ExportFormat::Csv,
             "tsv" => ExportFormat::Tsv,
@@ -342,7 +352,7 @@ async fn exports_from_every_family_refuse_sources_aliases_and_existing_files() {
         };
         if matches!(
             path.extension().unwrap().to_str().unwrap(),
-            "parquet" | "csv" | "tsv" | "jsonl"
+            "parquet" | "h5" | "csv" | "tsv" | "jsonl"
         ) {
             assert_eq!(
                 export(path.clone(), own).await.unwrap_err().code,

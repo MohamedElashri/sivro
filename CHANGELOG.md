@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Added HDF5 group/dataset browsing, attributes and storage metadata, scalar
+  and multidimensional selections, compound records, exact integers, and
+  equally sized dataset groups as columns. Refresh retains the chosen slice.
+- Added HDF5 exports for all table readers, using column datasets, null masks
+  and exact-value annotations, with row caps and cancellation/no-clobber checks.
+- Added h5py interoperability fixtures, reader lifecycle and GUI coverage, and
+  explicit format/resource limits. HDF5 2.0 layout v5, virtual/external storage
+  and external filter plugins are unsupported; supported objects remain browsable.
+
 ## 0.1.1
 
 - Replaced the warm-paper theme with contrast-adjusted Catppuccin Latte

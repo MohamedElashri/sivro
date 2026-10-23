@@ -7,9 +7,9 @@
 A local, read-only desktop explorer for tabular data, built with Rust, Tauri 2
 and DuckDB.
 
-- **Opens** Parquet, CSV, TSV, JSON, JSON Lines, Excel (`.xlsx`, `.xlsm`,
+- **Opens** Parquet, HDF5, CSV, TSV, JSON, JSON Lines, Excel (`.xlsx`, `.xlsm`,
   `.xlsb`, `.xls`) and SQLite.
-- **Exports** the current view to Parquet, CSV, TSV, a JSON array or JSON Lines.
+- **Exports** the current view to Parquet, HDF5, CSV, TSV, a JSON array or JSON Lines.
 - **Safe by design:** it never modifies a source file, runs no macros or
   formulas and accepts no SQL. Exploring data works entirely offline.
 - **Exact values:** large integers and decimals are never rounded through
@@ -65,7 +65,8 @@ it. Set `SIVRO_VERSION=v0.1.1` to pin a release.
 1. Open a file with **Open** (`Ctrl/⌘+O`) or drag it onto the window. Each file
    opens in its own tab.
 2. Confirm the parsing preview for CSV/TSV, pick a sheet for Excel workbooks,
-   or pick a table for SQLite databases.
+   pick a table for SQLite databases, or browse HDF5 groups and choose a dataset
+   and slice.
 3. Search (`Ctrl/⌘+K`), filter, sort, hide columns, profile a column or
    inspect a row. **Count rows** gives exact totals for filtered views.
 4. **Export** writes the current view (columns, filters and sort) to a new file.

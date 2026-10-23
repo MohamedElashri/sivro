@@ -642,6 +642,7 @@ pub fn open(
     let label = options.sheet.clone();
     let row_count = rows as u64;
     Ok(DuckDbAdapter {
+        hdf5: None,
         format: FormatKind::Excel,
         delimited: None,
         excel: Some(ExcelSelection {
@@ -667,6 +668,7 @@ pub fn open(
                 copy: true,
                 exports: vec![
                     "parquet".into(),
+                    "hdf5".into(),
                     "csv".into(),
                     "tsv".into(),
                     "json".into(),

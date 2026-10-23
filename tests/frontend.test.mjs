@@ -29,6 +29,8 @@ function frontend(options = {}) {
         loadDocument, copyDocument, loadRawRecord, renderMain, renderSidebar, renderFormatPrompt, getFormatPrompt() { return formatPrompt; },
         openExcel, changeExcel, confirmExcel, cancelExcel, renderExcel: require("./excel").renderExcel, getExcelDialog() { return excelDialog; },
         openSqlite, changeSqlite, confirmSqlite, cancelSqlite, renderSqlite: require("./sqlite").renderSqlite, getSqliteDialog() { return sqliteDialog; },
+        openHdf5, browseHdf5, changeHdf5, confirmHdf5, cancelHdf5, renderHdf5: require("./hdf5").renderHdf5,
+        hdf5Error: require("./hdf5").hdf5Error, hdf5Options: require("./hdf5").hdf5Options, getHdf5Dialog() { return hdf5Dialog; },
         getDialog() { return delimitedDialog; },
         openAbout, closeAbout, updates, renderTitlebar, chooseAndOpenFile, init, hasPendingView, renderTabStrip,
         getAppMetadata() { return appMetadata; }, getAboutOpen() { return aboutOpen; },
@@ -300,9 +302,9 @@ test("duplicate and blank labels use independent IDs for copied JSON and preview
   const markup=ui.renderDelimited({path:"/x.csv",options:{},preview,valid:true,busy:false,error:null,epoch:1});assert.doesNotMatch(markup,/<script>|<img /);assert.match(markup,/&lt;script&gt;/);assert.match(markup,/&lt;img/);
 });
 
-test("all five export choices are available for CSV tabs and output names strip input extensions", () => {
+test("all six export choices are available for CSV tabs and output names strip input extensions", () => {
   const ui=frontend(),tab=dataset();tab.info=textDescriptor();ui.useTab(tab);
-  for (const format of ["parquet","csv","tsv","json","jsonl"]) { ui.showExport(format);assert.match(ui.renderExportModal(tab),new RegExp(`value="${format}"`));assert.match(ui.defaultExportFileName("source.csv",format),new RegExp(`^source-export-.*[.]${format}$`)); }
+  for (const format of ["parquet","hdf5","csv","tsv","json","jsonl"]) { ui.showExport(format);assert.match(ui.renderExportModal(tab),new RegExp(`value="${format}"`));assert.match(ui.defaultExportFileName("source.csv",format),new RegExp(`^source-export-.*[.]${format === "hdf5" ? "h5" : format}$`)); }
   ui.showExport("jsonl");assert.match(ui.renderExportModal(tab),/one JSON object per line/);
 });
 
@@ -561,4 +563,39 @@ test("pending view changes have a Sublime-style dot until the loaded view catche
   tab.filters.push({ column: "col-0", op: "eq", value: "1" }); assert.equal(ui.hasPendingView(tab), true);
   tab.filters = []; assert.equal(ui.hasPendingView(tab), false);
   tab.stale = true; assert.match(ui.renderTabStrip(), /Source changed on disk/); assert.match(ui.renderTabStrip(), /tab-source-warning/);
+});
+
+function hdf5Info(group = "/") {
+  return { group, attributes: [{ name: "units", dataType: "utf8", value: "<script>" }], warnings: ["Read-only"], columnsSelectable: false, objects: [
+    { path: `${group === "/" ? "" : group}/cube`, name: "cube", kind: "dataset", shape: ["2", "3", "9007199254740995"], dataType: "i64", layout: "Chunked", chunkShape: ["1","1","1"], filters: [1], attributes: [], selectable: true, reason: null },
+    { path: "/nested", name: "nested", kind: "group", shape: [], dataType: "", attributes: [], selectable: false, reason: null },
+  ] };
+}
+test("HDF5 opens through group browsing and sends exact slice indices", async () => {
+  const ui = frontend(); const opening = ui.openFileByPath("/measurements.h5"); await flush();
+  assert.equal(ui.requests[0].command, "inspect_hdf5"); assert.equal(ui.requests[0].args.group, "/");
+  ui.requests[0].resolve(hdf5Info()); await opening;
+  let d = ui.getHdf5Dialog(); assert.equal(d.columnAxis, 1); assert.equal(d.rowAxis, 0);
+  ui.changeHdf5("index", "9007199254740993", "2"); ui.changeHdf5("rowLimit", "1");
+  const html = ui.renderHdf5(d); assert.match(html, /9007199254740993/); assert.ok(!html.includes("<script>")); assert.match(html, /&lt;script&gt;/);
+  const confirming = ui.confirmHdf5(); await flush();
+  assert.equal(ui.requests[1].command, "open_dataset");
+  assert.deepEqual(JSON.parse(JSON.stringify(ui.requests[1].args.openOptions)), { hdf5: { object: "/cube", columns: false, rowAxis: 0, columnAxis: 1, indices: ["0","0","9007199254740993"], rowStart: "0", rowLimit: 1 } });
+  const info = descriptor("hdf5"); info.format = "hdf5"; info.path = "/measurements.h5"; info.fileName = "measurements.h5";
+  ui.requests[1].resolve(info); await flush(); ui.requests[2].resolve(pageFor(info)); await confirming;
+  assert.equal(ui.getHdf5Dialog(), null); assert.match(ui.defaultExportFileName(info.fileName,"hdf5"),/^measurements-export-.*[.]h5$/);
+});
+test("HDF5 axis validation uses exact bounds and cancelled browsing cannot install late replies", async () => {
+  const ui = frontend(); const opening = ui.openHdf5("/x.hdf5"); await flush(); ui.requests[0].resolve(hdf5Info()); await opening;
+  ui.changeHdf5("index","9007199254740995","2"); assert.match(ui.hdf5Error(ui.getHdf5Dialog()),/outside/);
+  ui.changeHdf5("index","9007199254740994","2"); assert.equal(ui.hdf5Error(ui.getHdf5Dialog()),null);
+  ui.changeHdf5("rowAxis","1"); assert.equal(ui.getHdf5Dialog().columnAxis,null);
+  ui.changeHdf5("columnAxis","1"); assert.match(ui.hdf5Error(ui.getHdf5Dialog()),/distinct/);
+  const browse = ui.browseHdf5("/nested"); await flush(); ui.cancelHdf5(); ui.requests[1].resolve(hdf5Info("/nested")); await browse; assert.equal(ui.getHdf5Dialog(),null);
+});
+test("cancelling HDF5 confirmation closes unused sessions and group selection is explicit", async () => {
+  const ui=frontend();const opening=ui.openHdf5("/x.h5");await flush();const group=hdf5Info();group.columnsSelectable=true;group.objects=group.objects.filter(o=>o.kind==="dataset");group.objects[0].shape=["2"];ui.requests[0].resolve(group);await opening;
+  assert.equal(ui.getHdf5Dialog().columns,true);assert.equal(ui.getHdf5Dialog().selected,"/");
+  const confirming=ui.confirmHdf5();await flush();ui.cancelHdf5();const info=descriptor("unused");ui.requests[1].resolve(info);await confirming;
+  assert.equal(ui.getTabs().length,0);assert.ok(ui.calls.some(r=>r.command==="close_dataset"&&r.args.sessionId===info.sessionId));
 });

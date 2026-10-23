@@ -351,7 +351,7 @@ pub fn open(
                 profile: true,
                 exact_count: true,
                 copy: true,
-                exports: ["parquet", "csv", "tsv", "json", "jsonl"]
+                exports: ["parquet", "hdf5", "csv", "tsv", "json", "jsonl"]
                     .map(String::from)
                     .to_vec(),
             },
@@ -532,6 +532,7 @@ impl SqliteAdapter {
         policy: &ResourcePolicy,
     ) -> DatasetDescriptor {
         DatasetDescriptor {
+            hdf5: None,
             api_version: API_VERSION,
             session_id: session_id.into(),
             generation,
@@ -900,6 +901,14 @@ impl super::TableSource for SqliteAdapter {
         policy: &ResourcePolicy,
         context: &OperationContext,
     ) -> AppResult<ExportResult> {
+        if options.format == ExportFormat::Hdf5 {
+            let source = super::hdf5::ExportSource {
+                object: self.object.clone(),
+                path: self.path.clone(),
+                fingerprint: self.fingerprint.clone(),
+            };
+            return super::hdf5::export(self, generation, options, source, policy, context);
+        }
         context.check()?;
         if options.max_rows == 0 || options.max_rows > policy.max_export_rows {
             return Err(AppError::limit(format!(
@@ -955,6 +964,7 @@ impl super::TableSource for SqliteAdapter {
             ExportFormat::Tsv => job.delimited(&labels, b'\t')?,
             ExportFormat::Json => job.json(&labels, true)?,
             ExportFormat::Jsonl => job.json(&labels, false)?,
+            ExportFormat::Hdf5 => return Err(AppError::internal()),
             ExportFormat::Parquet => job.parquet(&labels)?,
         };
         if matches!(options.format, ExportFormat::Json | ExportFormat::Jsonl) {
@@ -981,6 +991,7 @@ impl super::TableSource for SqliteAdapter {
                     ExportFormat::Json | ExportFormat::Jsonl => {
                         "Binary cells use tagged hexadecimal objects in JSON."
                     }
+                    ExportFormat::Hdf5 => return Err(AppError::internal()),
                     ExportFormat::Parquet => "Binary cells are Parquet BINARY values.",
                 }
                 .into(),

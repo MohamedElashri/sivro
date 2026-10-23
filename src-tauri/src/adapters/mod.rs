@@ -1,6 +1,7 @@
 pub mod delimited;
 pub mod duckdb;
 pub mod excel;
+pub mod hdf5;
 pub mod json;
 pub mod parquet;
 pub mod sqlite;
@@ -84,6 +85,14 @@ impl TableSource for duckdb::DuckDbAdapter {
         p: &ResourcePolicy,
         context: &OperationContext,
     ) -> AppResult<ExportResult> {
+        if options.format == ExportFormat::Hdf5 {
+            let source = hdf5::ExportSource {
+                object: self.object.clone(),
+                path: self.path.clone(),
+                fingerprint: self.fingerprint.clone(),
+            };
+            return hdf5::export(self, g, options, source, p, context);
+        }
         crate::export::export(self, g, options, p, context)
     }
     #[cfg(test)]
@@ -207,6 +216,13 @@ pub fn open(
                 AppError::invalid("Choose a table or view before opening a database")
             })?;
             sqlite::open(path, options, object_id, policy).map(|a| Adapter::Sqlite(Box::new(a)))
+        }
+        (FormatKind::Hdf5, None) => {
+            let selection = options.hdf5.as_ref().ok_or_else(|| {
+                AppError::invalid("Choose an HDF5 dataset or column group before opening")
+            })?;
+            hdf5::open(path, selection, object_id, scratch, policy)
+                .map(|a| Adapter::Table(Box::new(a)))
         }
         (FormatKind::Parquet, None) => {
             parquet::ParquetAdapter::open(path, object_id, scratch, policy)

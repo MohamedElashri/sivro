@@ -12,6 +12,60 @@ pub struct OpenOptions {
     pub excel: Option<ExcelOptions>,
     /// Required for SQLite: the table or view, frozen per session.
     pub sqlite: Option<SqliteOptions>,
+    pub hdf5: Option<Hdf5Options>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Hdf5Options {
+    pub object: String,
+    #[serde(default)]
+    pub columns: bool,
+    #[serde(default)]
+    pub row_axis: usize,
+    pub column_axis: Option<usize>,
+    #[serde(default)]
+    pub indices: Vec<String>,
+    #[serde(default)]
+    pub row_start: String,
+    pub row_limit: Option<u64>,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hdf5Attribute {
+    pub name: String,
+    pub data_type: String,
+    pub value: Option<String>,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hdf5Object {
+    pub path: String,
+    pub name: String,
+    pub kind: String,
+    pub shape: Vec<String>,
+    pub data_type: String,
+    pub layout: String,
+    pub chunk_shape: Option<Vec<String>>,
+    pub filters: Vec<u16>,
+    pub attributes: Vec<Hdf5Attribute>,
+    pub selectable: bool,
+    pub reason: Option<String>,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hdf5Info {
+    pub group: String,
+    pub attributes: Vec<Hdf5Attribute>,
+    pub objects: Vec<Hdf5Object>,
+    pub columns_selectable: bool,
+    pub warnings: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hdf5Selection {
+    pub options: Hdf5Options,
+    pub info: Hdf5Info,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +192,7 @@ pub struct DatasetDescriptor {
     pub document: Option<DocumentInfo>,
     pub excel: Option<ExcelSelection>,
     pub sqlite: Option<SqliteSelection>,
+    pub hdf5: Option<Hdf5Selection>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -322,6 +377,7 @@ pub struct RowResult {
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
     Parquet,
+    Hdf5,
     Csv,
     Tsv,
     Json,

@@ -37,6 +37,8 @@ import { renderDelimited } from "./delimited";
 import type { DelimitedDialog } from "./delimited";
 import { parsePath, pathKey, renderDocument } from "./document";
 import { headerRowError, renderExcel } from "./excel";
+import { renderHdf5, chooseHdf5, hdf5Error, hdf5Options } from "./hdf5";
+import type { Hdf5Dialog } from "./hdf5";
 import { renderSqlite } from "./sqlite";
 import type { SqliteDialog } from "./sqlite";
 import type { ExcelDialog } from "./excel";
@@ -121,6 +123,8 @@ const FILTER_OPS: { value: FilterOp; label: string; needsValue: boolean; multi?:
 
 let delimitedDialog: DelimitedDialog | null = null;
 let excelDialog: ExcelDialog | null = null;
+let hdf5Dialog: Hdf5Dialog | null = null;
+let hdf5Epoch = 0;
 let sqliteDialog: SqliteDialog | null = null;
 let sqliteEpoch = 0;
 let excelEpoch = 0;
@@ -465,6 +469,7 @@ function renderFilterValue(tab: DatasetTab, column: ColumnInfo): string {
 }
 
 const EXPORT_FORMATS: { value: ExportFormat; label: string; ext: string }[] = [
+  { value: "hdf5", label: "HDF5", ext: "h5" },
   { value: "parquet", label: "Parquet", ext: "parquet" },
   { value: "csv", label: "CSV", ext: "csv" },
   { value: "tsv", label: "TSV", ext: "tsv" },
@@ -485,7 +490,7 @@ function timestampSuffix(date = new Date()): string {
 }
 
 function defaultExportFileName(fileName: string, format: ExportFormat): string {
-  const base = fileName.replace(/\.(parquet|pq|csv|tsv|json|jsonl|ndjson|xlsx|xlsm|xlsb|xls|sqlite3|sqlite|db)$/i, "") || "export";
+  const base = fileName.replace(/\.(parquet|pq|h5|hdf5|hdf|csv|tsv|json|jsonl|ndjson|xlsx|xlsm|xlsb|xls|sqlite3|sqlite|db)$/i, "") || "export";
   return `${base}-export-${timestampSuffix()}.${exportExt(format)}`;
 }
 
@@ -517,7 +522,7 @@ async function openFileByPath(path: string, format?: FormatKind): Promise<void> 
   if (existing) { activePath = path; render(); return; }
   const pending = opening.get(path); if (pending) return pending;
   const work = (async () => {
-    try { if (/\.(csv|tsv)$/i.test(path)) { await openDelimited(path); return; } if (/\.(xlsx|xlsm|xlsb|xls)$/i.test(path)) { await openExcel(path); return; } if (/\.(sqlite3|sqlite|db)$/i.test(path)) { await openSqlite(path); return; } const tab = adoptDataset(await datasets.open(path, format ? { format } : {})); if (tab && !tab.page && !tab.loading && !tab.stale) await loadInitial(tab); }
+    try { if (/\.(h5|hdf5|hdf)$/i.test(path)) { await openHdf5(path); return; } if (/\.(csv|tsv)$/i.test(path)) { await openDelimited(path); return; } if (/\.(xlsx|xlsm|xlsb|xls)$/i.test(path)) { await openExcel(path); return; } if (/\.(sqlite3|sqlite|db)$/i.test(path)) { await openSqlite(path); return; } const tab = adoptDataset(await datasets.open(path, format ? { format } : {})); if (tab && !tab.page && !tab.loading && !tab.stale) await loadInitial(tab); }
     catch (error) {
       const parsed = errorInfo(error);
       if (parsed.code === "format_mismatch" && !format && /\.(json|jsonl|ndjson)$/i.test(path)) {
@@ -642,6 +647,54 @@ async function confirmSqlite(): Promise<void> {
   } catch (error) { if (sqliteDialog === dialog) dialog.error = errorInfo(error).message; }
   finally { if (sqliteDialog === dialog) dialog.busy = false; render(); }
 }
+async function openHdf5(path: string): Promise<void> {
+  cancelHdf5(); const frozen = getTab(path)?.info.hdf5?.options;
+  hdf5Dialog = { path, info: null, selected: frozen?.object ?? "", columns: frozen?.columns ?? false, rowAxis: frozen?.rowAxis ?? 0, columnAxis: frozen?.columnAxis ?? null, indices: [...(frozen?.indices ?? [])], rowStart: frozen?.rowStart ?? "0", rowLimit: frozen?.rowLimit ? String(frozen.rowLimit) : "", busy: false, error: null, epoch: ++hdf5Epoch };
+  const group = frozen ? frozen.columns ? frozen.object : frozen.object.slice(0, frozen.object.lastIndexOf("/")) || "/" : "/";
+  await browseHdf5(group);
+}
+async function browseHdf5(group: string): Promise<void> {
+  const d = hdf5Dialog; if (!d || d.busy) return;
+  const epoch = ++hdf5Epoch; d.epoch = epoch; d.busy = true; d.error = null; render();
+  try {
+    const info = await datasets.inspectHdf5(d.path, group);
+    if (hdf5Dialog !== d || d.epoch !== epoch) return;
+    d.info = info;
+    if (!(d.columns && d.selected === info.group && info.columnsSelectable) && !info.objects.some(o => o.path === d.selected && o.selectable)) {
+      const object = info.objects.find(o => o.kind === "dataset" && o.selectable);
+      if (info.columnsSelectable) chooseHdf5(d, info.group, true);
+      else if (object) chooseHdf5(d, object.path);
+      else d.selected = "";
+    }
+  } catch (error) { if (hdf5Dialog === d && d.epoch === epoch) d.error = errorInfo(error).message; }
+  finally { if (hdf5Dialog === d && d.epoch === epoch) { d.busy = false; render(); } }
+}
+function changeHdf5(key: string, value: string, dimension?: string): void {
+  const d = hdf5Dialog; if (!d || d.busy) return;
+  if (key === "object" || key === "columns") chooseHdf5(d, value, key === "columns");
+  else if (key === "rowAxis") { d.rowAxis = Number(value); if (d.columnAxis === d.rowAxis) d.columnAxis = null; }
+  else if (key === "columnAxis") d.columnAxis = value === "none" ? null : Number(value);
+  else {
+    if (key === "index" && dimension !== undefined) d.indices[Number(dimension)] = value;
+    else if (key === "rowStart" || key === "rowLimit") d[key] = value;
+    d.error = null; d.epoch = ++hdf5Epoch;
+    document.querySelector<HTMLButtonElement>('[data-action="confirm-hdf5"]')?.toggleAttribute("disabled", !!hdf5Error(d)); return;
+  }
+  d.error = null; d.epoch = ++hdf5Epoch; render();
+}
+function cancelHdf5(): void { hdf5Dialog = null; ++hdf5Epoch; }
+async function confirmHdf5(): Promise<void> {
+  const d = hdf5Dialog; if (!d || d.busy || hdf5Error(d)) return;
+  const epoch = d.epoch; d.busy = true; d.error = null; render();
+  try {
+    const info = await datasets.open(d.path, { hdf5: hdf5Options(d) });
+    if (hdf5Dialog !== d || d.epoch !== epoch) { void datasets.close(info.sessionId); return; }
+    const previous = getTab(info.path);
+    if (previous) { previous.closed = true; invalidate(previous); tabs = tabs.filter(t => t !== previous); void datasets.close(previous.info.sessionId); }
+    hdf5Dialog = null; const tab = adoptDataset(info); if (tab) await loadPage(tab.info.path);
+  } catch (error) { if (hdf5Dialog === d) d.error = errorInfo(error).message; }
+  finally { if (hdf5Dialog === d) d.busy = false; render(); }
+}
 async function loadPage(path: string): Promise<void> {
   const tab = getTab(path); if (!tab || !tab.visibleColumns.length || tab.stale || tab.refreshing) return;
   for (const filter of tab.filters) {
@@ -757,7 +810,7 @@ async function chooseAndOpenFile(): Promise<void> {
   if (filePickerOpen || updates.changingApp) return;
   filePickerOpen = true;
   try {
-    const selected = await open({ multiple: false, filters: [{ name: "Parquet, CSV, TSV, JSON, JSON Lines, Excel and SQLite", extensions: ["parquet", "pq", "csv", "tsv", "json", "jsonl", "ndjson", "xlsx", "xlsm", "xlsb", "xls", "sqlite", "sqlite3", "db"] }] });
+    const selected = await open({ multiple: false, filters: [{ name: "Parquet, HDF5, CSV, TSV, JSON, JSON Lines, Excel and SQLite", extensions: ["parquet", "pq", "h5", "hdf5", "hdf", "csv", "tsv", "json", "jsonl", "ndjson", "xlsx", "xlsm", "xlsb", "xls", "sqlite", "sqlite3", "db"] }] });
     if (typeof selected === "string" && selected) await openFileByPath(selected);
   } catch (error) { showToast(`Could not open the file picker: ${String(error)}`, "error"); }
   finally { filePickerOpen = false; }
@@ -770,7 +823,7 @@ async function createSampleFile(): Promise<void> {
 async function runExport(): Promise<void> {
   const tab = activeTab(); if (!tab || exportBusy || !tab.pageQuery || tab.stale || tab.loading) return;
   const info = tab.info, view = tab.pageQuery, format = exportFormat, maxRows = exportMaxRows;
-  const dest = await save({ defaultPath: defaultExportFileName(info.fileName, format), filters: [{ name: EXPORT_FORMATS.find(f => f.value === format)?.label ?? format, extensions: [exportExt(format)] }] });
+  const dest = await save({ defaultPath: defaultExportFileName(info.fileName, format), filters: [{ name: EXPORT_FORMATS.find(f => f.value === format)?.label ?? format, extensions: format === "hdf5" ? ["h5", "hdf5", "hdf"] : [exportExt(format)] }] });
   if (!dest || !current(tab, info)) return;
   exportBusy = true; render();
   try {
@@ -933,6 +986,7 @@ function renderToolbar(tab: DatasetTab): string {
       </div>
       <div class="toolbar-actions">
         ${tab.info.format === "csv" || tab.info.format === "tsv" ? `<button class="btn-tool" data-action="parsing-settings">Parsing settings</button>` : ""}
+        ${tab.info.hdf5 ? `<button class="btn-tool" data-action="hdf5-objects" title="Choose another dataset, axes or slice">Dataset: ${escapeHtml(tab.info.hdf5.options.object)}</button>` : ""}
         ${tab.info.sqlite ? `<button class="btn-tool" data-action="sqlite-objects" title="Choose another table or view">Table: ${escapeHtml(tab.info.sqlite.object)}</button>` : ""}
         ${tab.info.excel ? `<button class="btn-tool" data-action="excel-sheets" title="Choose another sheet or header row">Sheet: ${escapeHtml(tab.info.excel.sheet)}</button>` : ""}
         ${notesButton(tab)}
@@ -1096,7 +1150,7 @@ function renderMain(tab: DatasetTab | null): string {
     <main class="main hero-wrap">
       <div class="hero" id="drop-hero">
         <h1>Drop a <em>data</em> file<br/>to peek inside</h1>
-        <p>Open Parquet, CSV, TSV, JSON, JSON Lines, Excel and SQLite files right on your machine — filter, sort and export with ease.</p>
+        <p>Open Parquet, HDF5, CSV, TSV, JSON, JSON Lines, Excel and SQLite files right on your machine — filter, sort and export with ease.</p>
         <div class="hero-actions">
           <button class="btn-primary btn-lg" data-action="open-file">${icon("upload")}<span>Open data file</span></button>
           <button class="btn-ghost btn-lg" data-action="make-sample">${icon("sparkles")}<span>Try a sample file</span></button>
@@ -1226,7 +1280,8 @@ function renderFileInfoModal(tab: DatasetTab | null): string {
         <div class="modal-body">
           <div class="file-title">${icon("file")}<strong>${escapeHtml(info.fileName)}</strong></div>
           <div class="file-path">${escapeHtml(info.path)}</div>
-          <p class="modal-desc">${info.format === "parquet" ? `Parquet version ${info.formatVersion} · ${info.rowGroups.length} row groups${info.createdBy ? ` · ${escapeHtml(info.createdBy)}` : ""}` : info.sqlite ? `SQLite ${escapeHtml(info.sqlite.database.sqliteVersion)} database · ${escapeHtml(info.sqlite.object)} · journal mode ${escapeHtml(info.sqlite.database.journalMode)} · read-only, live` : info.excel ? `${escapeHtml(info.excel.workbook.variant.toUpperCase())} workbook · sheet ${escapeHtml(info.excel.sheet)} · ${info.excel.headerRow === null ? "no header row" : `header row ${info.excel.headerRow}`} · ${info.excel.workbook.date1904 ? "1904" : "1900"} date system` : info.format === "json" || info.format === "jsonl" ? `${info.document ? "JSON document" : info.format === "json" ? "JSON array of records" : "JSON Lines records"} · UTF-8 · fully validated when opened` : `${info.format.toUpperCase()} · UTF-8 · frozen parsing settings`}</p>
+          <p class="modal-desc">${info.format === "parquet" ? `Parquet version ${info.formatVersion} · ${info.rowGroups.length} row groups${info.createdBy ? ` · ${escapeHtml(info.createdBy)}` : ""}` : info.hdf5 ? `HDF5 · ${escapeHtml(info.hdf5.options.object)} · selected slice` : info.sqlite ? `SQLite ${escapeHtml(info.sqlite.database.sqliteVersion)} database · ${escapeHtml(info.sqlite.object)} · journal mode ${escapeHtml(info.sqlite.database.journalMode)} · read-only, live` : info.excel ? `${escapeHtml(info.excel.workbook.variant.toUpperCase())} workbook · sheet ${escapeHtml(info.excel.sheet)} · ${info.excel.headerRow === null ? "no header row" : `header row ${info.excel.headerRow}`} · ${info.excel.workbook.date1904 ? "1904" : "1900"} date system` : info.format === "json" || info.format === "jsonl" ? `${info.document ? "JSON document" : info.format === "json" ? "JSON array of records" : "JSON Lines records"} · UTF-8 · fully validated when opened` : `${info.format.toUpperCase()} · UTF-8 · frozen parsing settings`}</p>
+          ${info.hdf5 ? `<details class="json-block"><summary>HDF5 selection, schema and attributes</summary><pre>${escapeHtml(JSON.stringify(info.hdf5, null, 2))}</pre></details>` : ""}
           ${info.document ? `<p class="modal-desc">${escapeHtml(info.document.reason)}</p>` : ""}
           ${info.object.warnings.map((warning) => `<p class="modal-desc muted">${escapeHtml(warning)}</p>`).join("")}
           <div class="modal-actions-row">
@@ -1264,7 +1319,7 @@ function renderExportModal(tab: DatasetTab | null): string {
                 <span>${f.label}</span>${f.value === "parquet" ? `<em class="default-tag">default</em>` : ""}
               </label>`).join("")}
           </div>
-          ${(exportFormat === "csv" || exportFormat === "tsv") ? `<p class="modal-desc">NULL is written as \\N; literal values matching this marker are rejected. Binary cells use hex:-prefixed text.</p>` : (exportFormat === "json" || exportFormat === "jsonl") ? `<p class="modal-desc">${exportFormat === "jsonl" ? "Writes one JSON object per line." : "Writes one JSON array."} Binary cells use tagged hex objects. Non-finite numbers require Parquet.</p>` : ""}
+          ${(exportFormat === "csv" || exportFormat === "tsv") ? `<p class="modal-desc">NULL is written as \\N; literal values matching this marker are rejected. Binary cells use hex:-prefixed text.</p>` : (exportFormat === "json" || exportFormat === "jsonl") ? `<p class="modal-desc">${exportFormat === "jsonl" ? "Writes one JSON object per line." : "Writes one JSON array."} Binary cells use tagged hex objects. Non-finite numbers require Parquet or HDF5.</p>` : ""}
           ${tab.info.format === "json" || tab.info.format === "jsonl" ? `<p class="modal-desc">JSON/JSONL output writes exact numeric tokens and nested values unquoted. Parquet refuses JSON_NUMBER columns; nested values become JSON text in Parquet, CSV and TSV.</p>` : ""}
           <label class="field-label" for="export-max">Max rows</label>
           <input id="export-max" type="number" min="1" max="${tab.info.policy.maxExportRows}" value="${exportMaxRows}" />
@@ -1345,6 +1400,7 @@ function render(): void {
     ${renderFormatPrompt()}
     ${renderExcel(excelDialog)}
     ${renderSqlite(sqliteDialog)}
+    ${renderHdf5(hdf5Dialog)}
     ${renderExportModal(tab)}
     ${aboutOpen ? renderAbout(appMetadata, metadataError, updates) : ""}
     <div id="toasts" class="toasts"></div>`;
@@ -1421,6 +1477,10 @@ async function handleAction(el: HTMLElement): Promise<void> {
     case "excel-sheets": if (tab) await openExcel(tab.info.path); break;
     case "sqlite-objects": if (tab) await openSqlite(tab.info.path); break;
     case "confirm-sqlite": await confirmSqlite(); break;
+    case "browse-hdf5": await browseHdf5(el.dataset.group ?? "/"); break;
+    case "hdf5-objects": if (tab) await openHdf5(tab.info.path); break;
+    case "confirm-hdf5": await confirmHdf5(); break;
+    case "cancel-hdf5": cancelHdf5(); render(); break;
     case "cancel-sqlite": cancelSqlite(); render(); break;
     case "confirm-excel": await confirmExcel(); break;
     case "cancel-excel": cancelExcel(); render(); break;
@@ -1845,6 +1905,7 @@ function setupEvents(): void {
   app.addEventListener("input", (e) => {
     const target = e.target as HTMLInputElement;
     const tab = activeTab();
+    if (target.dataset.hdf5 && target.tagName !== "SELECT" && target.type !== "radio") { changeHdf5(target.dataset.hdf5, target.value, target.dataset.dimension); return; }
     if (target.dataset.delimitedType) { changeDelimited("", target.value, target.dataset.delimitedType); return; }
     if (target.dataset.delimited && target.tagName !== "SELECT") { changeDelimited(target.dataset.delimited, target.value); return; }
     if (target.dataset.excel === "headerRow") { changeExcel("headerRow", target.value); return; }
@@ -1872,6 +1933,7 @@ function setupEvents(): void {
     if (kind === "theme") { theme.setPreference(target.value); return; }
     if (target.dataset.delimited) { changeDelimited(target.dataset.delimited, target.value); return; }
     if (target.dataset.excel) { changeExcel(target.dataset.excel, target.value); return; }
+    if (target.dataset.hdf5) { changeHdf5(target.dataset.hdf5, target.value, target.dataset.dimension); return; }
     if (target.dataset.sqlite) { changeSqlite(target.value); return; }
     if (!kind) return;
     const tab = activeTab();
@@ -1933,7 +1995,8 @@ function setupEvents(): void {
       e.preventDefault();
       document.getElementById("quick-search")?.focus();
     } else if (e.key === "Escape") {
-      if (sqliteDialog) { cancelSqlite(); render(); }
+      if (hdf5Dialog) { cancelHdf5(); render(); }
+      else if (sqliteDialog) { cancelSqlite(); render(); }
       else if (excelDialog) { cancelExcel(); render(); }
       else if (formatPrompt) { formatPrompt = null; render(); }
       else if (delimitedDialog) { cancelDelimited(); render(); }
@@ -1960,10 +2023,10 @@ function setupEvents(): void {
       if (aboutOpen || updates.changingApp) return;
       if (event.payload.type === "drop" && event.payload.paths.length > 0) {
         const first = event.payload.paths[0];
-        if (/\.(parquet|pq|csv|tsv|json|jsonl|ndjson|xlsx|xlsm|xlsb|xls|sqlite3|sqlite|db)$/i.test(first)) {
+        if (/\.(parquet|pq|h5|hdf5|hdf|csv|tsv|json|jsonl|ndjson|xlsx|xlsm|xlsb|xls|sqlite3|sqlite|db)$/i.test(first)) {
           void openFileByPath(first);
         } else {
-          showToast("Choose a Parquet, CSV, TSV, JSON, JSON Lines, Excel or SQLite file", "error");
+          showToast("Choose a Parquet, HDF5, CSV, TSV, JSON, JSON Lines, Excel or SQLite file", "error");
         }
       }
     })

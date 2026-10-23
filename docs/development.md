@@ -47,10 +47,13 @@ TypeScript/Vite frontend in `src`.
   a scratch directory. At most two expensive operations run at once; a 30 s
   budget interrupts native work, and refresh or close invalidates the
   generation so late replies are dropped.
-- **Readers** (`adapters/`): Parquet, CSV/TSV, JSON/JSONL record tables and
+- **Readers** (`adapters/`): Parquet, HDF5, CSV/TSV, JSON/JSONL record tables and
   Excel run on DuckDB through the `TableSource` trait; JSON and Excel data is
   first staged into session scratch (`stage.rs`). JSON documents use a bounded
-  in-memory tree. SQLite uses its own read-only rusqlite connection with an
+  in-memory tree. HDF5 uses a bounded positioned source with `hdf5-pure`,
+  lazy group navigation and staged selections (`adapters/hdf5/`); its column-table
+  exports have explicit null masks and validated type/encoding annotations.
+  SQLite uses its own read-only rusqlite connection with an
   authorizer that allows only reads.
 - **Queries** (`query/`): the frontend sends typed filters, column IDs, sorts
   and paging, never SQL. Rust compiles them with allow-listed identifiers and
@@ -87,7 +90,7 @@ which the Makefile adds automatically.
   About focus and pending-view tab indicators.
 - **Frontend** (`tests/frontend.test.mjs`): mocked IPC, stale replies,
   dialogs, filters and exports.
-- **Backend** (`src-tauri/src/tests`): every reader end to end, five-format
+- **Backend** (`src-tauri/src/tests`): every reader end to end, six-format
   export round trips, precision fixtures, hostile inputs, resource limits,
   cancellation, refresh and read-only guarantees.
 - **Library checks:** isolated checks of the DuckDB, Calamine and rusqlite
@@ -97,6 +100,12 @@ which the Makefile adds automatically.
   inside a loopback-only network namespace. Use `xvfb-run -a` when headless;
   Ubuntu 24.04 needs `kernel.apparmor_restrict_unprivileged_userns=0` for the
   offline run.
+
+HDF5 fixtures include h5py-generated classic, v1.14-compatible and layout-v5
+files, plus an independent h5py verifier for Sivro exports
+(`tests/fixtures/hdf5/`). Generate an export with the ignored
+`write_hdf5_interop_export` test and `SIVRO_HDF5_EXPORT` set, then run
+`uv run --with h5py tests/fixtures/hdf5/verify_exports.py PATH`.
 
 Fixtures are synthetic. On a Ryzen 7 7735H, 1M-row sources open in 14 ms
 (Parquet), ~200 ms (CSV/TSV) and ~5–6 s (JSON/JSONL, which are staged), with

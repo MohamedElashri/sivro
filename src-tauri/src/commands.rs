@@ -220,3 +220,8 @@ pub async fn inspect_database(state: Backend<'_>, path: String) -> AppResult<Dat
 pub fn discard_preview(state: Backend<'_>, token: String) -> AppResult<()> {
     state.discard_preview(&token)
 }
+
+#[tauri::command]
+pub async fn inspect_hdf5(state: Backend<'_>, path: String, group: String) -> AppResult<Hdf5Info> {
+    state.inner().inspect_hdf5(path, group).await
+}
