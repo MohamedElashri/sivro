@@ -739,7 +739,9 @@ fn unhex(value: &str) -> AppResult<Vec<u8>> {
     }
     value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|b| {
             let digit = |v: u8| -> AppResult<u8> {
                 match v {
