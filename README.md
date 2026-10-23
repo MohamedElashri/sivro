@@ -7,9 +7,11 @@
 A local, read-only desktop explorer for tabular data, built with Rust, Tauri 2
 and DuckDB.
 
-- **Opens** Parquet, CSV, TSV, JSON, JSON Lines, Excel (`.xlsx`, `.xlsm`,
+- **Opens** Parquet, Arrow IPC files/streams and Feather V2, CSV, TSV, JSON,
+  JSON Lines, Excel (`.xlsx`, `.xlsm`,
   `.xlsb`, `.xls`) and SQLite.
-- **Exports** the current view to Parquet, CSV, TSV, a JSON array or JSON Lines.
+- **Exports** the current view to Parquet, Arrow IPC files/streams, CSV, TSV,
+  a JSON array or JSON Lines.
 - **Safe by design:** it never modifies a source file, runs no macros or
   formulas and accepts no SQL. Exploring data works entirely offline.
 - **Exact values:** large integers and decimals are never rounded through

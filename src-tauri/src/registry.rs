@@ -12,6 +12,7 @@ use std::{
 
 pub fn extension_format(path: &Path) -> Option<FormatKind> {
     match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "arrow" | "ipc" | "feather" | "arrows" => Some(FormatKind::Arrow),
         "parquet" | "pq" => Some(FormatKind::Parquet),
         "csv" => Some(FormatKind::Csv),
         "tsv" => Some(FormatKind::Tsv),
@@ -27,7 +28,7 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
     let expected = extension_format(path).ok_or_else(|| {
         AppError::new(
             ErrorCode::UnsupportedFormat,
-            "This extension is outside the seven supported input families",
+            "This extension is not a supported input format",
         )
     })?;
     if !std::fs::metadata(path).map_err(AppError::io)?.is_file() {
@@ -45,6 +46,8 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
     let cfb = read >= 8 && head[..8] == [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
     let detected = if read >= 4 && &head[..4] == b"PAR1" {
         Some(FormatKind::Parquet)
+    } else if (read >= 6 && &head[..6] == b"ARROW1") || (read >= 4 && head[..4] == [255; 4]) {
+        Some(FormatKind::Arrow)
     } else if read == 16 && &head == b"SQLite format 3\0" {
         Some(FormatKind::Sqlite)
     } else {
@@ -88,6 +91,22 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
             ));
         }
     }
+    if expected == FormatKind::Arrow {
+        if read >= 4 && &head[..4] == b"FEA1" {
+            return Err(AppError::new(
+                ErrorCode::UnsupportedFormat,
+                "Legacy Feather V1 is unsupported; save it as Feather V2 or Arrow IPC",
+            ));
+        }
+        // Legacy IPC streams start with a metadata length instead of the
+        // continuation marker; their schema is validated by the Arrow reader.
+        if read < 4 {
+            return Err(AppError::new(
+                ErrorCode::FormatMismatch,
+                "The Arrow input is empty or truncated",
+            ));
+        }
+    }
     if expected == FormatKind::Sqlite && detected != Some(FormatKind::Sqlite) {
         return Err(AppError::new(
             ErrorCode::FormatMismatch,
@@ -120,6 +139,7 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
                 | FormatKind::Jsonl
                 | FormatKind::Excel
                 | FormatKind::Sqlite
+                | FormatKind::Arrow
         ),
         message: if expected == FormatKind::Parquet {
             "Parquet signature verified"
@@ -127,6 +147,8 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
             "UTF-8 prefix verified; confirm a strict delimited parsing preview before opening"
         } else if matches!(expected, FormatKind::Json | FormatKind::Jsonl) {
             "UTF-8 prefix verified; the whole input is validated while opening"
+        } else if expected == FormatKind::Arrow {
+            "Arrow IPC file/stream; all batches are validated while opening"
         } else if expected == FormatKind::Excel {
             "Workbook container verified; choose a worksheet and header row"
         } else if expected == FormatKind::Sqlite {

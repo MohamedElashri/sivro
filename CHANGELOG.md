@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Added local Arrow IPC file/stream and Feather V2 readers, including LZ4/ZSTD
+  compression, dictionary updates, original schema/metadata inspection, and
+  exact native values or explicit text representations for unsupported types.
+- Added Arrow IPC file and stream exports for all table readers, with filtered
+  views, row caps, binary values, exact numeric handling and no-clobber output.
+- Added Arrow framing/decompression/resource checks and backend, frontend and
+  shared GUI fixtures for both file and stream inputs.
+
 ## 0.1.1
 
 - Replaced the warm-paper theme with contrast-adjusted Catppuccin Latte

@@ -466,6 +466,8 @@ function renderFilterValue(tab: DatasetTab, column: ColumnInfo): string {
 
 const EXPORT_FORMATS: { value: ExportFormat; label: string; ext: string }[] = [
   { value: "parquet", label: "Parquet", ext: "parquet" },
+  { value: "arrow", label: "Arrow / Feather V2", ext: "arrow" },
+  { value: "arrow_stream", label: "Arrow IPC stream", ext: "arrows" },
   { value: "csv", label: "CSV", ext: "csv" },
   { value: "tsv", label: "TSV", ext: "tsv" },
   { value: "json", label: "JSON array", ext: "json" },
@@ -485,7 +487,7 @@ function timestampSuffix(date = new Date()): string {
 }
 
 function defaultExportFileName(fileName: string, format: ExportFormat): string {
-  const base = fileName.replace(/\.(parquet|pq|csv|tsv|json|jsonl|ndjson|xlsx|xlsm|xlsb|xls|sqlite3|sqlite|db)$/i, "") || "export";
+  const base = fileName.replace(/\.(parquet|pq|arrow|arrows|ipc|feather|csv|tsv|json|jsonl|ndjson|xlsx|xlsm|xlsb|xls|sqlite3|sqlite|db)$/i, "") || "export";
   return `${base}-export-${timestampSuffix()}.${exportExt(format)}`;
 }
 
@@ -757,7 +759,7 @@ async function chooseAndOpenFile(): Promise<void> {
   if (filePickerOpen || updates.changingApp) return;
   filePickerOpen = true;
   try {
-    const selected = await open({ multiple: false, filters: [{ name: "Parquet, CSV, TSV, JSON, JSON Lines, Excel and SQLite", extensions: ["parquet", "pq", "csv", "tsv", "json", "jsonl", "ndjson", "xlsx", "xlsm", "xlsb", "xls", "sqlite", "sqlite3", "db"] }] });
+    const selected = await open({ multiple: false, filters: [{ name: "Parquet, Arrow, CSV, TSV, JSON, JSON Lines, Excel and SQLite", extensions: ["parquet", "pq", "arrow", "arrows", "ipc", "feather", "csv", "tsv", "json", "jsonl", "ndjson", "xlsx", "xlsm", "xlsb", "xls", "sqlite", "sqlite3", "db"] }] });
     if (typeof selected === "string" && selected) await openFileByPath(selected);
   } catch (error) { showToast(`Could not open the file picker: ${String(error)}`, "error"); }
   finally { filePickerOpen = false; }
@@ -770,7 +772,7 @@ async function createSampleFile(): Promise<void> {
 async function runExport(): Promise<void> {
   const tab = activeTab(); if (!tab || exportBusy || !tab.pageQuery || tab.stale || tab.loading) return;
   const info = tab.info, view = tab.pageQuery, format = exportFormat, maxRows = exportMaxRows;
-  const dest = await save({ defaultPath: defaultExportFileName(info.fileName, format), filters: [{ name: EXPORT_FORMATS.find(f => f.value === format)?.label ?? format, extensions: [exportExt(format)] }] });
+  const dest = await save({ defaultPath: defaultExportFileName(info.fileName, format), filters: [{ name: EXPORT_FORMATS.find(f => f.value === format)?.label ?? format, extensions: format === "arrow" ? ["arrow", "ipc", "feather"] : format === "arrow_stream" ? ["arrows", "ipc", "arrow"] : [exportExt(format)] }] });
   if (!dest || !current(tab, info)) return;
   exportBusy = true; render();
   try {
@@ -1096,7 +1098,7 @@ function renderMain(tab: DatasetTab | null): string {
     <main class="main hero-wrap">
       <div class="hero" id="drop-hero">
         <h1>Drop a <em>data</em> file<br/>to peek inside</h1>
-        <p>Open Parquet, CSV, TSV, JSON, JSON Lines, Excel and SQLite files right on your machine — filter, sort and export with ease.</p>
+        <p>Open Parquet, Arrow, CSV, TSV, JSON, JSON Lines, Excel and SQLite files right on your machine — filter, sort and export with ease.</p>
         <div class="hero-actions">
           <button class="btn-primary btn-lg" data-action="open-file">${icon("upload")}<span>Open data file</span></button>
           <button class="btn-ghost btn-lg" data-action="make-sample">${icon("sparkles")}<span>Try a sample file</span></button>
@@ -1226,7 +1228,8 @@ function renderFileInfoModal(tab: DatasetTab | null): string {
         <div class="modal-body">
           <div class="file-title">${icon("file")}<strong>${escapeHtml(info.fileName)}</strong></div>
           <div class="file-path">${escapeHtml(info.path)}</div>
-          <p class="modal-desc">${info.format === "parquet" ? `Parquet version ${info.formatVersion} · ${info.rowGroups.length} row groups${info.createdBy ? ` · ${escapeHtml(info.createdBy)}` : ""}` : info.sqlite ? `SQLite ${escapeHtml(info.sqlite.database.sqliteVersion)} database · ${escapeHtml(info.sqlite.object)} · journal mode ${escapeHtml(info.sqlite.database.journalMode)} · read-only, live` : info.excel ? `${escapeHtml(info.excel.workbook.variant.toUpperCase())} workbook · sheet ${escapeHtml(info.excel.sheet)} · ${info.excel.headerRow === null ? "no header row" : `header row ${info.excel.headerRow}`} · ${info.excel.workbook.date1904 ? "1904" : "1900"} date system` : info.format === "json" || info.format === "jsonl" ? `${info.document ? "JSON document" : info.format === "json" ? "JSON array of records" : "JSON Lines records"} · UTF-8 · fully validated when opened` : `${info.format.toUpperCase()} · UTF-8 · frozen parsing settings`}</p>
+          <p class="modal-desc">${info.format === "parquet" ? `Parquet version ${info.formatVersion} · ${info.rowGroups.length} row groups${info.createdBy ? ` · ${escapeHtml(info.createdBy)}` : ""}` : info.format === "arrow" ? "Arrow IPC file / stream · fully validated when opened" : info.sqlite ? `SQLite ${escapeHtml(info.sqlite.database.sqliteVersion)} database · ${escapeHtml(info.sqlite.object)} · journal mode ${escapeHtml(info.sqlite.database.journalMode)} · read-only, live` : info.excel ? `${escapeHtml(info.excel.workbook.variant.toUpperCase())} workbook · sheet ${escapeHtml(info.excel.sheet)} · ${info.excel.headerRow === null ? "no header row" : `header row ${info.excel.headerRow}`} · ${info.excel.workbook.date1904 ? "1904" : "1900"} date system` : info.format === "json" || info.format === "jsonl" ? `${info.document ? "JSON document" : info.format === "json" ? "JSON array of records" : "JSON Lines records"} · UTF-8 · fully validated when opened` : `${info.format.toUpperCase()} · UTF-8 · frozen parsing settings`}</p>
+          ${info.arrow ? `<details class="json-block"><summary>Original Arrow schema and metadata</summary><pre class="json-view">${escapeHtml(JSON.stringify(info.arrow, null, 2))}</pre></details>` : ""}
           ${info.document ? `<p class="modal-desc">${escapeHtml(info.document.reason)}</p>` : ""}
           ${info.object.warnings.map((warning) => `<p class="modal-desc muted">${escapeHtml(warning)}</p>`).join("")}
           <div class="modal-actions-row">
@@ -1264,8 +1267,8 @@ function renderExportModal(tab: DatasetTab | null): string {
                 <span>${f.label}</span>${f.value === "parquet" ? `<em class="default-tag">default</em>` : ""}
               </label>`).join("")}
           </div>
-          ${(exportFormat === "csv" || exportFormat === "tsv") ? `<p class="modal-desc">NULL is written as \\N; literal values matching this marker are rejected. Binary cells use hex:-prefixed text.</p>` : (exportFormat === "json" || exportFormat === "jsonl") ? `<p class="modal-desc">${exportFormat === "jsonl" ? "Writes one JSON object per line." : "Writes one JSON array."} Binary cells use tagged hex objects. Non-finite numbers require Parquet.</p>` : ""}
-          ${tab.info.format === "json" || tab.info.format === "jsonl" ? `<p class="modal-desc">JSON/JSONL output writes exact numeric tokens and nested values unquoted. Parquet refuses JSON_NUMBER columns; nested values become JSON text in Parquet, CSV and TSV.</p>` : ""}
+          ${(exportFormat === "csv" || exportFormat === "tsv") ? `<p class="modal-desc">NULL is written as \\N; literal values matching this marker are rejected. Binary cells use hex:-prefixed text.</p>` : (exportFormat === "json" || exportFormat === "jsonl") ? `<p class="modal-desc">${exportFormat === "jsonl" ? "Writes one JSON object per line." : "Writes one JSON array."} Binary cells use tagged hex objects. Non-finite numbers require Parquet or Arrow.</p>` : ""}
+          ${tab.info.format === "json" || tab.info.format === "jsonl" ? `<p class="modal-desc">JSON/JSONL output writes exact numeric tokens and nested values unquoted. Parquet refuses JSON_NUMBER columns; nested values become JSON text in Parquet, Arrow, CSV and TSV.</p>` : ""}
           <label class="field-label" for="export-max">Max rows</label>
           <input id="export-max" type="number" min="1" max="${tab.info.policy.maxExportRows}" value="${exportMaxRows}" />
           <p class="modal-desc muted">File name will default to include the current date-time, e.g. <strong>${escapeHtml(defaultExportFileName(tab.info.fileName, exportFormat))}</strong>.</p>
@@ -1960,10 +1963,10 @@ function setupEvents(): void {
       if (aboutOpen || updates.changingApp) return;
       if (event.payload.type === "drop" && event.payload.paths.length > 0) {
         const first = event.payload.paths[0];
-        if (/\.(parquet|pq|csv|tsv|json|jsonl|ndjson|xlsx|xlsm|xlsb|xls|sqlite3|sqlite|db)$/i.test(first)) {
+        if (/\.(parquet|pq|arrow|arrows|ipc|feather|csv|tsv|json|jsonl|ndjson|xlsx|xlsm|xlsb|xls|sqlite3|sqlite|db)$/i.test(first)) {
           void openFileByPath(first);
         } else {
-          showToast("Choose a Parquet, CSV, TSV, JSON, JSON Lines, Excel or SQLite file", "error");
+          showToast("Choose a Parquet, Arrow, CSV, TSV, JSON, JSON Lines, Excel or SQLite file", "error");
         }
       }
     })

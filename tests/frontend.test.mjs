@@ -25,7 +25,7 @@ function frontend(options = {}) {
         renderGrid, renderDrawer, renderPagination, rowJson, handleAction, loadPage, validateFilter: require("./filters").validateFilter, filterInputType: require("./filters").filterInputType,
         loadProfile, loadCount, refreshTab, openFileByPath, runExport, queryFor,
         openDelimited, previewDelimited, changeDelimited, confirmDelimited, cancelDelimited,
-        renderDelimited: require("./delimited").renderDelimited, renderExportModal, defaultExportFileName,
+        renderDelimited: require("./delimited").renderDelimited, renderExportModal, renderFileInfoModal, defaultExportFileName,
         loadDocument, copyDocument, loadRawRecord, renderMain, renderSidebar, renderFormatPrompt, getFormatPrompt() { return formatPrompt; },
         openExcel, changeExcel, confirmExcel, cancelExcel, renderExcel: require("./excel").renderExcel, getExcelDialog() { return excelDialog; },
         openSqlite, changeSqlite, confirmSqlite, cancelSqlite, renderSqlite: require("./sqlite").renderSqlite, getSqliteDialog() { return sqliteDialog; },
@@ -35,6 +35,7 @@ function frontend(options = {}) {
         useTab(tab) { tabs = [tab]; activePath = tab.info.path; },
         useTabs(values, active) { tabs = values; activePath = active; },
         getTabs() { return tabs; }, getLastExport() { return lastExport; },
+        showInfo() { fileInfoOpen = true; },
         showExport(format) { exportModalOpen = true; if (format) exportFormat = format; }
       };` : "";
     const require = (id) => {
@@ -300,9 +301,9 @@ test("duplicate and blank labels use independent IDs for copied JSON and preview
   const markup=ui.renderDelimited({path:"/x.csv",options:{},preview,valid:true,busy:false,error:null,epoch:1});assert.doesNotMatch(markup,/<script>|<img /);assert.match(markup,/&lt;script&gt;/);assert.match(markup,/&lt;img/);
 });
 
-test("all five export choices are available for CSV tabs and output names strip input extensions", () => {
+test("all seven export choices are available for CSV tabs and output names strip input extensions", () => {
   const ui=frontend(),tab=dataset();tab.info=textDescriptor();ui.useTab(tab);
-  for (const format of ["parquet","csv","tsv","json","jsonl"]) { ui.showExport(format);assert.match(ui.renderExportModal(tab),new RegExp(`value="${format}"`));assert.match(ui.defaultExportFileName("source.csv",format),new RegExp(`^source-export-.*[.]${format}$`)); }
+  for (const format of ["parquet","arrow","arrow_stream","csv","tsv","json","jsonl"]) { ui.showExport(format);assert.match(ui.renderExportModal(tab),new RegExp(`value="${format}"`));assert.match(ui.defaultExportFileName("source.csv",format),new RegExp(`^source-export-.*[.]${format === "arrow_stream" ? "arrows" : format}$`)); }
   ui.showExport("jsonl");assert.match(ui.renderExportModal(tab),/one JSON object per line/);
 });
 
@@ -561,4 +562,21 @@ test("pending view changes have a Sublime-style dot until the loaded view catche
   tab.filters.push({ column: "col-0", op: "eq", value: "1" }); assert.equal(ui.hasPendingView(tab), true);
   tab.filters = []; assert.equal(ui.hasPendingView(tab), false);
   tab.stale = true; assert.match(ui.renderTabStrip(), /Source changed on disk/); assert.match(ui.renderTabStrip(), /tab-source-warning/);
+});
+
+
+test("Arrow inputs open directly and preserve exact pages, metadata and export filenames", async () => {
+  const ui = frontend();
+  for (const suffix of ["arrow", "arrows", "ipc", "feather"]) {
+    const path = `/data.${suffix}`;
+    const opening = ui.openFileByPath(path); await flush();
+    const info = descriptor(suffix); info.format = "arrow"; info.path = path; info.fileName = `data.${suffix}`;
+    info.arrow = { encoding: suffix === "arrows" ? "stream" : "file", metadata: { producer: "<script>" }, fields: [] };
+    const index = ui.requests.length - 1;
+    assert.equal(ui.requests[index].command, "open_dataset");
+    ui.requests[index].resolve(info); await flush(); ui.requests[index + 1].resolve(pageFor(info)); await opening;
+    ui.showInfo(); const html = ui.renderFileInfoModal(ui.getTabs().at(-1)); assert.match(html, /Original Arrow schema/); assert.ok(!html.includes("<script>")); assert.match(html, /&lt;script&gt;/);
+    assert.match(ui.defaultExportFileName(info.fileName, "arrow"), /^data-export-.*[.]arrow$/);
+    assert.match(ui.defaultExportFileName(info.fileName, "arrow_stream"), /^data-export-.*[.]arrows$/);
+  }
 });

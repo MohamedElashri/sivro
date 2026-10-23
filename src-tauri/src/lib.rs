@@ -1,6 +1,7 @@
 //! Sivro desktop shell and versioned session commands.
 mod adapters;
 pub mod api;
+mod columnar;
 mod commands;
 pub mod dataset;
 pub mod errors;

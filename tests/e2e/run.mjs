@@ -85,6 +85,8 @@ async function chooseTheme(value) {
 }
 
 const cases = [
+  { file: "people.arrow", expect: ["9007199254740993", "Alice"] },
+  { file: "people.arrows", expect: ["9007199254740993", "Alice"] },
   { file: "people.parquet", expect: ["9007199254740993", "Alice"] },
   { file: "people.csv", dialog: "confirm-delimited", expect: ["9007199254740993", "Bob"], count: true },
   { file: "people.tsv", dialog: "confirm-delimited", expect: ["9007199254740993", "Bob"], count: true },
@@ -183,6 +185,23 @@ try {
       const text = await mainText();
       for (const token of test.expect) if (!text.includes(token)) throw new Error(`${test.file}: expected ${JSON.stringify(token)} on screen`);
       steps.push(`saw ${test.expect.length} exact values`);
+      if (test.file === "people.arrow" || test.file === "people.arrows") {
+        await click('.tab-info[data-action="open-file-info"]');
+        await waitFor("Arrow metadata", present(".modal details summary"));
+        await click(".modal details summary");
+        const metadata = await exec("return document.querySelector('.modal details pre')?.textContent ?? ''");
+        if (!metadata.includes('"encoding"') || !metadata.includes('"Int64"')) throw new Error("Original Arrow schema is missing");
+        if (args.includes("--keep")) {
+          const shot = await wd("GET", `/session/${sid}/screenshot`); writeFileSync(join(work, `${test.file}-metadata.png`), Buffer.from(shot, "base64"));
+        }
+        await click('[data-action="close-file-info"]');
+        await click('[data-action="open-export"]');
+        for (const format of ["arrow", "arrow_stream"]) {
+          if (!(await exec("return !!document.querySelector(arguments[0])", `.export-formats input[value="${format}"]`))) throw new Error(`Missing ${format} export choice`);
+        }
+        await click('.modal-head [data-action="close-modals"]');
+        steps.push("schema metadata and Arrow export choices");
+      }
       await click(`.tab-close[data-path="${attr(path)}"]`); steps.push("close");
       await waitFor("tab closed", async () => !(await exec("return !!document.querySelector(`.dataset-tab[data-path=\"${arguments[0]}\"]`)", attr(path))));
       results.push({ file: test.file, ms: Date.now() - started, steps });
