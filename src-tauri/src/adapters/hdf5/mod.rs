@@ -1217,6 +1217,7 @@ pub fn open(
             .collect();
         let warnings=vec!["HDF5 values are staged from the selected axes, fixed indices and row window; exports do not reproduce the source hierarchy.".into(),"Enums retain their numeric values (FALSE/TRUE enums become booleans); nested records/arrays use exact JSON text, opaque values and references use bytes. Links and references are never followed.".into(),format!("Selected source rows {start}..{} on axis {row_axis}; {count} rows staged.",start+rows)];
         Ok(DuckDbAdapter {
+            arrow: None,
             hdf5: Some(Hdf5Selection {
                 options: options.clone(),
                 info,
@@ -1240,9 +1241,18 @@ pub fn open(
                     profile: true,
                     exact_count: true,
                     copy: true,
-                    exports: ["parquet", "hdf5", "csv", "tsv", "json", "jsonl"]
-                        .map(String::from)
-                        .to_vec(),
+                    exports: [
+                        "parquet",
+                        "arrow",
+                        "arrow_stream",
+                        "hdf5",
+                        "csv",
+                        "tsv",
+                        "json",
+                        "jsonl",
+                    ]
+                    .map(String::from)
+                    .to_vec(),
                 },
                 warnings,
             },

@@ -92,6 +92,8 @@ const cases = [
   { file: "people.h5", dialog: "confirm-hdf5", expect: ["9007199254740993", "Alice"] },
   { file: "classic.h5", dialog: "confirm-hdf5", group: "/arrays", dataset: "/arrays/cube", slice: true, expect: ["9007199254741007", "9007199254741015"] },
   { file: "layout-v5.h5", dialog: "confirm-hdf5", group: "/filtered", dataset: "/filtered/btree", slice: true, expect: ["9007199254741001", "9007199254741008"] },
+  { file: "people.arrow", expect: ["9007199254740993", "Alice"] },
+  { file: "people.arrows", expect: ["9007199254740993", "Alice"] },
   { file: "people.parquet", expect: ["9007199254740993", "Alice"] },
   { file: "people.csv", dialog: "confirm-delimited", expect: ["9007199254740993", "Bob"], count: true },
   { file: "people.tsv", dialog: "confirm-delimited", expect: ["9007199254740993", "Bob"], count: true },
@@ -145,14 +147,19 @@ try {
     await click('#about-close'); await chooseTheme("light");
   }
   results.push({ file: "About", ms: 0, steps: ["version", "author", "links", "manual updates", "focus restored"] });
-  const paths = cases.map((c) => join(fixtures, c.file));
+  const paths = cases.slice(0, 10).map((c) => join(fixtures, c.file));
   await exec("localStorage.setItem('sivro-recents', JSON.stringify(arguments[0])); location.reload();", paths);
   await waitFor("recent files", () => exec("return document.querySelectorAll('.recent-item').length === arguments[0]", paths.length));
   for (const test of cases) {
     const started = Date.now(), steps = [];
     const path = join(fixtures, test.file);
     try {
-      await click(`.recent-item[data-path="${attr(path)}"]`); steps.push("open");
+      const recent = `.recent-item[data-path="${attr(path)}"]`;
+      if (!(await present(recent)())) {
+        await exec("localStorage.setItem('sivro-recents', JSON.stringify([arguments[0]])); location.reload();", path);
+        await waitFor(`${test.file} recent entry`, present(recent));
+      }
+      await click(recent); steps.push("open");
       if (test.dialog) {
         if (test.slice) {
           await waitFor("HDF5 groups", present(`[data-action="browse-hdf5"][data-group="${test.group}"]`));
@@ -204,6 +211,23 @@ try {
       const text = await mainText();
       for (const token of test.expect) if (!text.includes(token)) throw new Error(`${test.file}: expected ${JSON.stringify(token)} on screen`);
       steps.push(`saw ${test.expect.length} exact values`);
+      if (test.file === "people.arrow" || test.file === "people.arrows") {
+        await click('.tab-info[data-action="open-file-info"]');
+        await waitFor("Arrow metadata", present(".modal details summary"));
+        await click(".modal details summary");
+        const metadata = await exec("return document.querySelector('.modal details pre')?.textContent ?? ''");
+        if (!metadata.includes('"encoding"') || !metadata.includes('"Int64"')) throw new Error("Original Arrow schema is missing");
+        if (args.includes("--keep")) {
+          const shot = await wd("GET", `/session/${sid}/screenshot`); writeFileSync(join(work, `${test.file}-metadata.png`), Buffer.from(shot, "base64"));
+        }
+        await click('[data-action="close-file-info"]');
+        await click('[data-action="open-export"]');
+        for (const format of ["arrow", "arrow_stream"]) {
+          if (!(await exec("return !!document.querySelector(arguments[0])", `.export-formats input[value="${format}"]`))) throw new Error(`Missing ${format} export choice`);
+        }
+        await click('.modal-head [data-action="close-modals"]');
+        steps.push("schema metadata and Arrow export choices");
+      }
       await click(`.tab-close[data-path="${attr(path)}"]`); steps.push("close");
       await waitFor("tab closed", async () => !(await exec("return !!document.querySelector(`.dataset-tab[data-path=\"${arguments[0]}\"]`)", attr(path))));
       results.push({ file: test.file, ms: Date.now() - started, steps });

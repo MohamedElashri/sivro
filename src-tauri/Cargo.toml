@@ -2,7 +2,7 @@
 name = "sivro"
 # Generated from package.json by `npm run version:sync`.
 version = "0.1.1"
-description = "Local, read-only desktop explorer for Parquet, CSV, TSV, JSON, JSON Lines, HDF5, Excel and SQLite"
+description = "Local, read-only desktop explorer for Parquet, CSV, TSV, JSON, JSON Lines, Arrow, HDF5, Excel and SQLite"
 authors = ["Mohamed Elashri <git@elashri.com>"]
 edition = "2021"
 rust-version = "1.90"
@@ -31,10 +31,14 @@ fs2 = "=0.4.3"
 # No `bundled` by default: local + CI builds link prebuilt DuckDB static
 # archives (see scripts/fetch-duckdb.mjs). The `json`/`parquet` features both
 # imply `bundled` (full C++ compile), so they must stay off here.
-duckdb = { version = "1", default-features = false }
-parquet = "55"
-arrow-array = "55"
-arrow-schema = "55"
+duckdb = { version = "1", default-features = false, features = ["vtab-arrow"] }
+parquet = "58"
+arrow-array = { version = "58", features = ["chrono-tz"] }
+arrow-schema = "58"
+arrow-ipc = { version = "58", features = ["lz4", "zstd"] }
+arrow-cast = "58"
+# Bound LZ4 output during IPC preflight before Arrow decodes the buffer.
+lz4_flex = "0.13"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 # Excel reader: selected-sheet streaming, cached formula values only.
 # No VBA/picture/date features; zip is calamine's own pinned version, used

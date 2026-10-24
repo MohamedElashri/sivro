@@ -209,6 +209,7 @@ async fn sample_session_end_to_end_and_five_export_roundtrips() {
         let conn = Connection::open_in_memory().unwrap();
         let reader = match format {
             ExportFormat::Hdf5 => unreachable!(),
+            ExportFormat::Arrow | ExportFormat::ArrowStream => unreachable!(),
             ExportFormat::Parquet => "read_parquet",
             ExportFormat::Csv => "read_csv_auto",
             ExportFormat::Json | ExportFormat::Jsonl => "read_json_auto",
@@ -2176,4 +2177,5 @@ mod hardening;
 
 mod perf;
 
+mod arrow;
 mod hdf5;

@@ -1,3 +1,4 @@
+pub mod arrow;
 pub mod delimited;
 pub mod duckdb;
 pub mod excel;
@@ -223,6 +224,9 @@ pub fn open(
             })?;
             hdf5::open(path, selection, object_id, scratch, policy)
                 .map(|a| Adapter::Table(Box::new(a)))
+        }
+        (FormatKind::Arrow, None) => {
+            arrow::open(path, object_id, scratch, policy).map(|a| Adapter::Table(Box::new(a)))
         }
         (FormatKind::Parquet, None) => {
             parquet::ParquetAdapter::open(path, object_id, scratch, policy)

@@ -12,8 +12,10 @@ fn write_e2e_fixtures() {
 }
 
 /// One file per input family; the GUI runner and hardening tests share them.
-pub(super) const FILES: [&str; 8] = [
+pub(super) const FILES: [&str; 10] = [
     "people.parquet",
+    "people.arrow",
+    "people.arrows",
     "people.h5",
     "people.csv",
     "people.tsv",
@@ -41,6 +43,35 @@ pub(super) fn write_all(dir: &Path) {
         &dir.join("people.parquet"),
         &format!("SELECT * FROM (VALUES (1, 'Alice', {big}::BIGINT), (2, 'Bob', 7::BIGINT)) t(id, name, big)"),
     );
+    {
+        use arrow_array::{ArrayRef, Int64Array, RecordBatch, StringArray};
+        use arrow_schema::{DataType, Field, Schema};
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, true),
+            Field::new("big", DataType::Int64, true),
+        ]));
+        let arrays: Vec<ArrayRef> = vec![
+            Arc::new(Int64Array::from(vec![1, 2])),
+            Arc::new(StringArray::from(vec!["Alice", "Bob"])),
+            Arc::new(Int64Array::from(vec![9007199254740993, 7])),
+        ];
+        let batch = RecordBatch::try_new(schema.clone(), arrays).unwrap();
+        super::arrow::write(
+            &dir.join("people.arrow"),
+            std::slice::from_ref(&batch),
+            &schema,
+            false,
+            Some(arrow_ipc::CompressionType::LZ4_FRAME),
+        );
+        super::arrow::write(
+            &dir.join("people.arrows"),
+            &[batch],
+            &schema,
+            true,
+            Some(arrow_ipc::CompressionType::ZSTD),
+        );
+    }
     std::fs::write(
         dir.join("people.csv"),
         format!("id,name,code\n1,Alice,{big}\n2,Bob,00123\n"),

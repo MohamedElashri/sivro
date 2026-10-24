@@ -45,8 +45,8 @@
     "resources": {
       "../LICENSE": "LICENSE"
     },
-    "shortDescription": "Local desktop explorer for Parquet, HDF5, CSV, TSV, JSON, JSON Lines, Excel and SQLite",
-    "longDescription": "Sivro explores local Parquet, HDF5, CSV, TSV, JSON, JSON Lines, Excel (xlsx, xlsm, xlsb, xls) and SQLite files with parsing previews, worksheet and table selection, exact-number JSON document inspection, schema inspection, a paged grid, filtering, sorting, column profiles, and Parquet, HDF5, CSV, TSV, JSON array and JSON Lines exports.",
+    "shortDescription": "Local desktop explorer for Parquet, Arrow, HDF5, CSV, TSV, JSON, JSON Lines, Excel and SQLite",
+    "longDescription": "Sivro explores local Parquet, Arrow IPC/Feather V2, HDF5, CSV, TSV, JSON, JSON Lines, Excel (xlsx, xlsm, xlsb, xls) and SQLite files with parsing previews, worksheet and table selection, exact-number JSON document inspection, schema inspection, a paged grid, filtering, sorting, column profiles, and Parquet, Arrow IPC file/stream, HDF5, CSV, TSV, JSON array and JSON Lines exports.",
     "createUpdaterArtifacts": true
   },
   "plugins": {

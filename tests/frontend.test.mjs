@@ -25,7 +25,7 @@ function frontend(options = {}) {
         renderGrid, renderDrawer, renderPagination, rowJson, handleAction, loadPage, validateFilter: require("./filters").validateFilter, filterInputType: require("./filters").filterInputType,
         loadProfile, loadCount, refreshTab, openFileByPath, runExport, queryFor,
         openDelimited, previewDelimited, changeDelimited, confirmDelimited, cancelDelimited,
-        renderDelimited: require("./delimited").renderDelimited, renderExportModal, defaultExportFileName,
+        renderDelimited: require("./delimited").renderDelimited, renderExportModal, renderFileInfoModal, defaultExportFileName,
         loadDocument, copyDocument, loadRawRecord, renderMain, renderSidebar, renderFormatPrompt, getFormatPrompt() { return formatPrompt; },
         openExcel, changeExcel, confirmExcel, cancelExcel, renderExcel: require("./excel").renderExcel, getExcelDialog() { return excelDialog; },
         openSqlite, changeSqlite, confirmSqlite, cancelSqlite, renderSqlite: require("./sqlite").renderSqlite, getSqliteDialog() { return sqliteDialog; },
@@ -37,6 +37,7 @@ function frontend(options = {}) {
         useTab(tab) { tabs = [tab]; activePath = tab.info.path; },
         useTabs(values, active) { tabs = values; activePath = active; },
         getTabs() { return tabs; }, getLastExport() { return lastExport; },
+        showInfo() { fileInfoOpen = true; },
         showExport(format) { exportModalOpen = true; if (format) exportFormat = format; }
       };` : "";
     const require = (id) => {
@@ -302,9 +303,9 @@ test("duplicate and blank labels use independent IDs for copied JSON and preview
   const markup=ui.renderDelimited({path:"/x.csv",options:{},preview,valid:true,busy:false,error:null,epoch:1});assert.doesNotMatch(markup,/<script>|<img /);assert.match(markup,/&lt;script&gt;/);assert.match(markup,/&lt;img/);
 });
 
-test("all six export choices are available for CSV tabs and output names strip input extensions", () => {
+test("all eight export choices are available for CSV tabs and output names strip input extensions", () => {
   const ui=frontend(),tab=dataset();tab.info=textDescriptor();ui.useTab(tab);
-  for (const format of ["parquet","hdf5","csv","tsv","json","jsonl"]) { ui.showExport(format);assert.match(ui.renderExportModal(tab),new RegExp(`value="${format}"`));assert.match(ui.defaultExportFileName("source.csv",format),new RegExp(`^source-export-.*[.]${format === "hdf5" ? "h5" : format}$`)); }
+  for (const format of ["parquet","hdf5","arrow","arrow_stream","csv","tsv","json","jsonl"]) { ui.showExport(format);assert.match(ui.renderExportModal(tab),new RegExp(`value="${format}"`));assert.match(ui.defaultExportFileName("source.csv",format),new RegExp(`^source-export-.*[.]${format === "hdf5" ? "h5" : format === "arrow_stream" ? "arrows" : format}$`)); }
   ui.showExport("jsonl");assert.match(ui.renderExportModal(tab),/one JSON object per line/);
 });
 
@@ -598,4 +599,20 @@ test("cancelling HDF5 confirmation closes unused sessions and group selection is
   assert.equal(ui.getHdf5Dialog().columns,true);assert.equal(ui.getHdf5Dialog().selected,"/");
   const confirming=ui.confirmHdf5();await flush();ui.cancelHdf5();const info=descriptor("unused");ui.requests[1].resolve(info);await confirming;
   assert.equal(ui.getTabs().length,0);assert.ok(ui.calls.some(r=>r.command==="close_dataset"&&r.args.sessionId===info.sessionId));
+});
+
+test("Arrow inputs open directly and preserve exact pages, metadata and export filenames", async () => {
+  const ui = frontend();
+  for (const suffix of ["arrow", "arrows", "ipc", "feather"]) {
+    const path = `/data.${suffix}`;
+    const opening = ui.openFileByPath(path); await flush();
+    const info = descriptor(suffix); info.format = "arrow"; info.path = path; info.fileName = `data.${suffix}`;
+    info.arrow = { encoding: suffix === "arrows" ? "stream" : "file", metadata: { producer: "<script>" }, fields: [] };
+    const index = ui.requests.length - 1;
+    assert.equal(ui.requests[index].command, "open_dataset");
+    ui.requests[index].resolve(info); await flush(); ui.requests[index + 1].resolve(pageFor(info)); await opening;
+    ui.showInfo(); const html = ui.renderFileInfoModal(ui.getTabs().at(-1)); assert.match(html, /Original Arrow schema/); assert.ok(!html.includes("<script>")); assert.match(html, /&lt;script&gt;/);
+    assert.match(ui.defaultExportFileName(info.fileName, "arrow"), /^data-export-.*[.]arrow$/);
+    assert.match(ui.defaultExportFileName(info.fileName, "arrow_stream"), /^data-export-.*[.]arrows$/);
+  }
 });

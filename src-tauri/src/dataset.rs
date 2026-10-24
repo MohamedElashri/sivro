@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum FormatKind {
     Parquet,
     Hdf5,
+    Arrow,
     Csv,
     Tsv,
     Json,

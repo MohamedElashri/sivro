@@ -44,6 +44,8 @@ impl ExportStage {
         let valid = match format {
             ExportFormat::Hdf5 => matches!(extension.as_str(), "h5" | "hdf5" | "hdf"),
             ExportFormat::Parquet => matches!(extension.as_str(), "parquet" | "pq"),
+            ExportFormat::Arrow => matches!(extension.as_str(), "arrow" | "ipc" | "feather"),
+            ExportFormat::ArrowStream => matches!(extension.as_str(), "arrows" | "ipc" | "arrow"),
             ExportFormat::Csv => extension == "csv",
             ExportFormat::Tsv => extension == "tsv",
             ExportFormat::Json => extension == "json",
@@ -142,13 +144,16 @@ pub fn export(
         &options.view,
         policy,
     )?;
-    if options.format == ExportFormat::Parquet {
+    if matches!(
+        options.format,
+        ExportFormat::Parquet | ExportFormat::Arrow | ExportFormat::ArrowStream
+    ) {
         if let Some(c) = compiled
             .selected
             .iter()
             .find(|c| c.data_type == sql::JSON_NUMBER)
         {
-            return Err(AppError::new(ErrorCode::Export, format!("{} holds JSON numbers with exponents or more than 38 digits; no Parquet numeric type stores them exactly. Hide the column or export JSON, JSONL, CSV or TSV.", c.name)));
+            return Err(AppError::new(ErrorCode::Export, format!("{} holds JSON numbers with exponents or more than 38 digits; this columnar export cannot store them exactly. Hide the column or export JSON, JSONL, CSV or TSV.", c.name)));
         }
     }
     let stage = ExportStage::new(
@@ -233,7 +238,7 @@ pub fn export(
                 (ColumnKind::Binary, ExportFormat::Csv | ExportFormat::Tsv) => format!("CASE WHEN {name} IS NULL THEN NULL ELSE 'hex:' || hex({name}) END"),
                 // DuckDB's Parquet writer stores 128-bit integers as DOUBLE.
                 // DECIMAL(38,0) is exact; wider values fail the cast loudly.
-                (ColumnKind::Number, ExportFormat::Parquet)
+                (ColumnKind::Number, ExportFormat::Parquet | ExportFormat::Arrow | ExportFormat::ArrowStream)
                     if matches!(c.data_type.as_str(), "HUGEINT" | "UHUGEINT") =>
                 {
                     format!("CAST({name} AS DECIMAL(38,0))")
@@ -250,6 +255,7 @@ pub fn export(
         .join(", ");
     let output = match options.format {
         ExportFormat::Hdf5 => return Err(AppError::internal()),
+        ExportFormat::Arrow | ExportFormat::ArrowStream => "",
         ExportFormat::Parquet => "FORMAT PARQUET",
         ExportFormat::Csv => "FORMAT CSV, HEADER true, DELIMITER ',', NULL '\\N'",
         ExportFormat::Json => "FORMAT JSON, ARRAY true",
@@ -292,6 +298,19 @@ pub fn export(
             &compiled.parameters,
             options.format == ExportFormat::Json,
             &stage.file,
+            policy,
+            context,
+        )?
+    } else if matches!(
+        options.format,
+        ExportFormat::Arrow | ExportFormat::ArrowStream
+    ) {
+        write_arrow(
+            adapter,
+            &format!("SELECT {labels} FROM ({select})"),
+            &compiled.parameters,
+            &stage.file,
+            options.format,
             policy,
             context,
         )?
@@ -357,7 +376,10 @@ pub fn export(
             ExportFormat::Csv | ExportFormat::Tsv => {
                 warnings.push("Binary cells use hex:-prefixed text in CSV/TSV.".into())
             }
-            ExportFormat::Hdf5 | ExportFormat::Parquet => (),
+            ExportFormat::Hdf5
+            | ExportFormat::Parquet
+            | ExportFormat::Arrow
+            | ExportFormat::ArrowStream => (),
         }
     }
     if found > options.max_rows {
@@ -505,4 +527,55 @@ pub fn validate_json(path: &Path, array: bool, context: &OperationContext) -> Ap
             .try_for_each(|item| item.map(|_| ()))
     };
     validated.map_err(|_| AppError::new(ErrorCode::Export, "These values cannot be represented as standard JSON (for example NaN/Infinity). Choose Parquet to preserve native types."))
+}
+
+/// The DuckDB iterator panics on native fetch failures (including interruption).
+/// Contain that API behavior and return the operation's cancellation/timeout.
+fn write_arrow(
+    adapter: &DuckDbAdapter,
+    select: &str,
+    parameters: &[duckdb::types::Value],
+    path: &Path,
+    format: ExportFormat,
+    policy: &ResourcePolicy,
+    context: &OperationContext,
+) -> AppResult<u64> {
+    let mut statement = adapter.conn.prepare(select).map_err(AppError::query)?;
+    let mut batches = statement
+        .stream_arrow(params_from_iter(parameters.iter()))
+        .map_err(AppError::query)?;
+    let schema = batches.get_schema();
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(AppError::io)?;
+    let mut writer = crate::columnar::Writer::new(file, schema, format)?;
+    let mut written = 0;
+    loop {
+        context.check()?;
+        let batch = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| batches.next()))
+        {
+            Ok(batch) => batch,
+            Err(_) => {
+                context.check()?;
+                return Err(AppError::new(
+                    ErrorCode::Export,
+                    "Could not fetch Arrow export data",
+                ));
+            }
+        };
+        let Some(batch) = batch else {
+            break;
+        };
+        writer.write(&batch)?;
+        written += batch.num_rows() as u64;
+        if path.metadata().map_err(AppError::io)?.len() > policy.scratch_bytes {
+            return Err(AppError::limit("Arrow export exceeded the disk budget"));
+        }
+        free_space(path.parent().unwrap_or(path), policy, 0)?;
+    }
+    context.check()?;
+    writer.finish()?;
+    Ok(written)
 }

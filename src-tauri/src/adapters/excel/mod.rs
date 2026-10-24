@@ -643,6 +643,7 @@ pub fn open(
     let row_count = rows as u64;
     Ok(DuckDbAdapter {
         hdf5: None,
+        arrow: None,
         format: FormatKind::Excel,
         delimited: None,
         excel: Some(ExcelSelection {
@@ -669,6 +670,8 @@ pub fn open(
                 exports: vec![
                     "parquet".into(),
                     "hdf5".into(),
+                    "arrow".into(),
+                    "arrow_stream".into(),
                     "csv".into(),
                     "tsv".into(),
                     "json".into(),

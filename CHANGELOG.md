@@ -4,6 +4,8 @@
 
 - Added HDF5 browsing, attributes, multidimensional slices and exact-value exports.
   Supports layout v3/v4/v5; see [format limits](docs/formats.md#hdf5).
+- Added Arrow IPC file/stream and Feather V2 input and export, with LZ4/ZSTD
+  reading and exact values. See [format limits](docs/formats.md#arrow-ipc-and-feather-v2).
 
 ## 0.1.1
 

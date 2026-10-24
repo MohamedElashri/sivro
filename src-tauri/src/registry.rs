@@ -13,6 +13,7 @@ use std::{
 pub fn extension_format(path: &Path) -> Option<FormatKind> {
     match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
         "h5" | "hdf5" | "hdf" => Some(FormatKind::Hdf5),
+        "arrow" | "ipc" | "feather" | "arrows" => Some(FormatKind::Arrow),
         "parquet" | "pq" => Some(FormatKind::Parquet),
         "csv" => Some(FormatKind::Csv),
         "tsv" => Some(FormatKind::Tsv),
@@ -72,6 +73,8 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
         Some(FormatKind::Hdf5)
     } else if read >= 4 && &head[..4] == b"PAR1" {
         Some(FormatKind::Parquet)
+    } else if (read >= 6 && &head[..6] == b"ARROW1") || (read >= 4 && head[..4] == [255; 4]) {
+        Some(FormatKind::Arrow)
     } else if read == 16 && &head == b"SQLite format 3\0" {
         Some(FormatKind::Sqlite)
     } else {
@@ -115,6 +118,22 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
             ));
         }
     }
+    if expected == FormatKind::Arrow {
+        if read >= 4 && &head[..4] == b"FEA1" {
+            return Err(AppError::new(
+                ErrorCode::UnsupportedFormat,
+                "Legacy Feather V1 is unsupported; save it as Feather V2 or Arrow IPC",
+            ));
+        }
+        // Legacy IPC streams start with a metadata length instead of the
+        // continuation marker; their schema is validated by the Arrow reader.
+        if read < 4 {
+            return Err(AppError::new(
+                ErrorCode::FormatMismatch,
+                "The Arrow input is empty or truncated",
+            ));
+        }
+    }
     if expected == FormatKind::Sqlite && detected != Some(FormatKind::Sqlite) {
         return Err(AppError::new(
             ErrorCode::FormatMismatch,
@@ -148,6 +167,7 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
                 | FormatKind::Excel
                 | FormatKind::Sqlite
                 | FormatKind::Hdf5
+                | FormatKind::Arrow
         ),
         message: if expected == FormatKind::Parquet {
             "Parquet signature verified"
@@ -157,6 +177,8 @@ pub fn probe(path: &Path) -> AppResult<ProbeResult> {
             "UTF-8 prefix verified; the whole input is validated while opening"
         } else if expected == FormatKind::Hdf5 {
             "HDF5 signature verified; choose a dataset or column group"
+        } else if expected == FormatKind::Arrow {
+            "Arrow IPC file/stream; all batches are validated while opening"
         } else if expected == FormatKind::Excel {
             "Workbook container verified; choose a worksheet and header row"
         } else if expected == FormatKind::Sqlite {

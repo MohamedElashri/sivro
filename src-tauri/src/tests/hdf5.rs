@@ -738,6 +738,73 @@ async fn hdf5_v5_corrupt_trees_and_chunks_fail_and_exports_stay_exact() {
 }
 
 #[tokio::test]
+async fn arrow_hdf5_exports_preserve_exact_values_in_both_directions() {
+    let dir = Directory::new();
+    let state = state(&dir);
+    let source = dir.0.join("cross-format.parquet");
+    fixture(&source, "SELECT * FROM (VALUES (9007199254740993::BIGINT, 18446744073709551615::UBIGINT, 12345678901234567890.123456789::DECIMAL(29,9), true, 'a' || chr(0) || 'b', from_hex('00FF')), (NULL, NULL, NULL, false, '', NULL)) t(i,u,d,b,s,bytes)");
+    let original = open(&state, &source).await;
+    let expected = page(&state, &original, query(&original)).await.rows;
+    for (format, suffix, next, next_suffix) in [
+        (ExportFormat::Arrow, "arrow", ExportFormat::Hdf5, "h5"),
+        (
+            ExportFormat::ArrowStream,
+            "arrows",
+            ExportFormat::Hdf5,
+            "h5",
+        ),
+        (ExportFormat::Hdf5, "h5", ExportFormat::Arrow, "arrow"),
+    ] {
+        let first = dir.0.join(format!("first.{suffix}"));
+        text_export(&state, &original, &first, format, query(&original))
+            .await
+            .unwrap();
+        let intermediate = if format == ExportFormat::Hdf5 {
+            open_hdf(
+                &state,
+                &first,
+                Hdf5Options {
+                    columns: true,
+                    ..selection("/table")
+                },
+            )
+            .await
+            .unwrap()
+        } else {
+            open(&state, &first).await
+        };
+        let final_path = dir.0.join(format!("via-{suffix}.{next_suffix}"));
+        text_export(
+            &state,
+            &intermediate,
+            &final_path,
+            next,
+            query(&intermediate),
+        )
+        .await
+        .unwrap();
+        let restored = if next == ExportFormat::Hdf5 {
+            open_hdf(
+                &state,
+                &final_path,
+                Hdf5Options {
+                    columns: true,
+                    ..selection("/table")
+                },
+            )
+            .await
+            .unwrap()
+        } else {
+            open(&state, &final_path).await
+        };
+        assert_eq!(
+            page(&state, &restored, query(&restored)).await.rows,
+            expected
+        );
+    }
+}
+
+#[tokio::test]
 async fn hdf5_exports_every_table_family_and_checks_caps_sources_and_buffers() {
     let dir = Directory::new();
     let state = state(&dir);

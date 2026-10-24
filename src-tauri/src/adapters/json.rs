@@ -901,6 +901,7 @@ fn stage(
     }
     Ok(DuckDbAdapter {
         hdf5: None,
+        arrow: None,
         format,
         delimited: None,
         excel: None,
@@ -923,6 +924,8 @@ fn stage(
                 exports: vec![
                     "parquet".into(),
                     "hdf5".into(),
+                    "arrow".into(),
+                    "arrow_stream".into(),
                     "csv".into(),
                     "tsv".into(),
                     "json".into(),
@@ -1060,6 +1063,7 @@ impl JsonDocument {
             excel: None,
             sqlite: None,
             hdf5: None,
+            arrow: None,
         }
     }
 
