@@ -138,6 +138,23 @@ pub struct DatasetDescriptor {
     pub document: Option<DocumentInfo>,
     pub excel: Option<ExcelSelection>,
     pub sqlite: Option<SqliteSelection>,
+    pub arrow: Option<ArrowInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArrowInfo {
+    pub encoding: String,
+    pub metadata: std::collections::BTreeMap<String, String>,
+    pub fields: Vec<ArrowFieldInfo>,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArrowFieldInfo {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+    pub metadata: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -322,6 +339,8 @@ pub struct RowResult {
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
     Parquet,
+    Arrow,
+    ArrowStream,
     Csv,
     Tsv,
     Json,

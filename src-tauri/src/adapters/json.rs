@@ -900,6 +900,7 @@ fn stage(
         warnings.push(format!("Records contain more than {} distinct keys; additional keys appear only in the source record.", policy.max_columns));
     }
     Ok(DuckDbAdapter {
+        arrow: None,
         format,
         delimited: None,
         excel: None,
@@ -921,6 +922,8 @@ fn stage(
                 copy: true,
                 exports: vec![
                     "parquet".into(),
+                    "arrow".into(),
+                    "arrow_stream".into(),
                     "csv".into(),
                     "tsv".into(),
                     "json".into(),
@@ -1057,6 +1060,7 @@ impl JsonDocument {
             document: Some(self.info.clone()),
             excel: None,
             sqlite: None,
+            arrow: None,
         }
     }
 

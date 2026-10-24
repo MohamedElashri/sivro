@@ -1,3 +1,4 @@
+pub mod arrow;
 pub mod delimited;
 pub mod duckdb;
 pub mod excel;
@@ -207,6 +208,9 @@ pub fn open(
                 AppError::invalid("Choose a table or view before opening a database")
             })?;
             sqlite::open(path, options, object_id, policy).map(|a| Adapter::Sqlite(Box::new(a)))
+        }
+        (FormatKind::Arrow, None) => {
+            arrow::open(path, object_id, scratch, policy).map(|a| Adapter::Table(Box::new(a)))
         }
         (FormatKind::Parquet, None) => {
             parquet::ParquetAdapter::open(path, object_id, scratch, policy)

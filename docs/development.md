@@ -47,9 +47,10 @@ TypeScript/Vite frontend in `src`.
   a scratch directory. At most two expensive operations run at once; a 30 s
   budget interrupts native work, and refresh or close invalidates the
   generation so late replies are dropped.
-- **Readers** (`adapters/`): Parquet, CSV/TSV, JSON/JSONL record tables and
-  Excel run on DuckDB through the `TableSource` trait; JSON and Excel data is
-  first staged into session scratch (`stage.rs`). JSON documents use a bounded
+- **Readers** (`adapters/`): Parquet, Arrow IPC/Feather V2, CSV/TSV, JSON/JSONL
+  record tables and Excel run on DuckDB through the `TableSource` trait; JSON and Excel data is
+  first staged into session scratch (`stage.rs`). Arrow uses bounded IPC reads
+  and DuckDB's native Arrow bridge (`arrow.rs`). JSON documents use a bounded
   in-memory tree. SQLite uses its own read-only rusqlite connection with an
   authorizer that allows only reads.
 - **Queries** (`query/`): the frontend sends typed filters, column IDs, sorts
@@ -87,13 +88,13 @@ which the Makefile adds automatically.
   About focus and pending-view tab indicators.
 - **Frontend** (`tests/frontend.test.mjs`): mocked IPC, stale replies,
   dialogs, filters and exports.
-- **Backend** (`src-tauri/src/tests`): every reader end to end, five-format
+- **Backend** (`src-tauri/src/tests`): every reader end to end, seven-format
   export round trips, precision fixtures, hostile inputs, resource limits,
   cancellation, refresh and read-only guarantees.
 - **Library checks:** isolated checks of the DuckDB, Calamine and rusqlite
   behaviour the readers rely on.
 - **GUI** (`tests/e2e/run.mjs`): the built app through `tauri-driver` and
-  `WebKitWebDriver` (`webkit2gtk-driver`), one file per format, online and
+  `WebKitWebDriver` (`webkit2gtk-driver`), one file per format (both Arrow IPC files and streams), online and
   inside a loopback-only network namespace. Use `xvfb-run -a` when headless;
   Ubuntu 24.04 needs `kernel.apparmor_restrict_unprivileged_userns=0` for the
   offline run.

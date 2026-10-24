@@ -1,6 +1,7 @@
 # Formats and behaviour
 
-Sivro reads Parquet (`.parquet`, `.pq`), CSV (`.csv`), TSV (`.tsv`), JSON
+Sivro reads Parquet (`.parquet`, `.pq`), Arrow IPC / Feather V2
+(`.arrow`, `.ipc`, `.feather`, `.arrows`), CSV (`.csv`), TSV (`.tsv`), JSON
 (`.json`), JSON Lines (`.jsonl`, `.ndjson`), Excel (`.xlsx`, `.xlsm`, `.xlsb`,
 `.xls`) and SQLite (`.sqlite`, `.sqlite3`, `.db`). It never modifies a source.
 Release limitations are summarized in the [changelog](../CHANGELOG.md).
@@ -10,9 +11,10 @@ Release limitations are summarized in the [changelog](../CHANGELOG.md).
 Every format shares one workflow: multiple tabs, recent files, drag/drop,
 schema and row-group details, a paged grid, search, filters, sorting, column
 profiles, nested row inspection, copying and a 1,500-row sample generator.
-Exports support Parquet, CSV, TSV, **JSON arrays** and **JSON Lines**. Queries
-use backend-owned sessions and column IDs; exact numbers travel as tagged text. The first page uses the Parquet metadata
-count for an unfiltered view. Filtered views offer **Count rows** on demand, while profiles
+Exports support Parquet, Arrow IPC files/streams, CSV, TSV, **JSON arrays** and
+**JSON Lines**. Queries use backend-owned sessions and column IDs; exact numbers
+travel as tagged text. The first page uses the Parquet metadata count for an
+unfiltered view. Filtered views offer **Count rows** on demand, while profiles
 are computed when requested. **Refresh** explicitly reopens a changed source
 and resets its view; **Cancel work** interrupts queued or active operations.
 
@@ -23,9 +25,34 @@ identifies omitted rows. Existing destinations, source paths and aliases are
 never overwritten; choose a new filename. CSV/TSV use `\N` for NULL and reject a
 literal value equal to that marker. Binary cells export as `hex:` text in CSV/TSV
 and `{ "$binary_hex": "...", "byteCount": "..." }` in JSON/JSONL. JSON exports reject
-non-finite numbers; Parquet retains native types. Row copying keeps large
+non-finite numbers; Parquet and Arrow retain native types. Row copying keeps large
 numbers as JSON numbers and uses strings for NaN/Infinity with a visible note.
 Grid previews are bounded; expansion/copy is capped at 1 MiB.
+
+## Arrow IPC and Feather V2
+
+Open `.arrow`, `.ipc`, `.feather` or `.arrows`; framing selects the file/stream
+reader. Feather V2, legacy stream framing, multiple batches, dictionaries,
+LZ4 and ZSTD are supported. Feather V1, Flight and tensor messages are not.
+File details show the original schema and metadata.
+
+Common scalars, exact decimals, lists, structs and maps use native query types.
+Types without an exact query representation use labelled text fallbacks,
+including Decimal256/negative-scale decimals, Date64, nanosecond times,
+zoned nanosecond timestamps, durations, intervals, unions, list views and
+run-end encoding. Dictionaries decode to values; extension types use storage
+types. Nested types containing fallbacks become text as a whole.
+
+Limits: 256 MiB input, 128 MiB per encoded/decoded message or batch, 8 MiB
+metadata/footer, and 1 GiB cumulative decoded buffers/scratch. Opening validates
+and stages every batch within the shared time budget.
+
+Export **Arrow / Feather V2** for an uncompressed IPC file or **Arrow IPC stream**
+for a stream. Both preserve the loaded view and current query types, including
+binary and NaN/Infinity. Original metadata, dictionaries, extensions and timezone
+labels are not retained. Wide integers must fit `DECIMAL(38,0)`; exact JSON-number
+columns are rejected, and nested JSON becomes text. Mixed SQLite columns follow
+Parquet's homogeneous-type and exact-integer checks.
 
 ## CSV and TSV
 
@@ -82,11 +109,11 @@ If a `.json` file holds JSON Lines (or the reverse), opening reports the mismatc
 and offers an explicit **Reopen as…** choice.
 
 JSON/JSONL exports from these tables write exact tokens and nested values
-unquoted. Parquet export refuses `JSON_NUMBER` columns because no Parquet
-numeric type holds them exactly, and writes `JSON_VALUE` as text. For every
-reader, `HUGEINT` is written to Parquet as `DECIMAL(38,0)` because DuckDB's
-Parquet writer would otherwise store it as `DOUBLE`. Values beyond 38 digits
-make the export fail.
+unquoted. Parquet and Arrow exports refuse `JSON_NUMBER` columns because these
+exports cannot retain their exact source tokens, and write `JSON_VALUE` as text.
+For every reader, `HUGEINT` is written to Parquet and Arrow as `DECIMAL(38,0)`;
+DuckDB's Parquet writer would otherwise store it as `DOUBLE`. Values beyond
+38 digits make the export fail.
 
 ## Excel
 
@@ -138,7 +165,7 @@ BLOB is not NULL, and text that isn't valid UTF-8 is shown as bytes. Rows are
 ordered by rowid or the primary key, which also breaks sort ties. Views have
 no stable key, so their row order can shift when the database changes. Text
 search uses SQLite `LIKE`, which ignores case only for ASCII letters. Parquet
-export refuses a column that mixes numbers, text and BLOBs. CSV, TSV, JSON
+and Arrow exports refuse a column that mixes numbers, text and BLOBs. CSV, TSV, JSON
 and JSONL keep each cell's representation.
 
 A WAL-mode database needs its `-wal`/`-shm` files. Reading it in a writable

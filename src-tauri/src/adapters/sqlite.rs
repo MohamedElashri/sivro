@@ -351,9 +351,17 @@ pub fn open(
                 profile: true,
                 exact_count: true,
                 copy: true,
-                exports: ["parquet", "csv", "tsv", "json", "jsonl"]
-                    .map(String::from)
-                    .to_vec(),
+                exports: [
+                    "parquet",
+                    "arrow",
+                    "arrow_stream",
+                    "csv",
+                    "tsv",
+                    "json",
+                    "jsonl",
+                ]
+                .map(String::from)
+                .to_vec(),
             },
             warnings,
         },
@@ -532,6 +540,7 @@ impl SqliteAdapter {
         policy: &ResourcePolicy,
     ) -> DatasetDescriptor {
         DatasetDescriptor {
+            arrow: None,
             api_version: API_VERSION,
             session_id: session_id.into(),
             generation,
@@ -955,7 +964,9 @@ impl super::TableSource for SqliteAdapter {
             ExportFormat::Tsv => job.delimited(&labels, b'\t')?,
             ExportFormat::Json => job.json(&labels, true)?,
             ExportFormat::Jsonl => job.json(&labels, false)?,
-            ExportFormat::Parquet => job.parquet(&labels)?,
+            ExportFormat::Parquet | ExportFormat::Arrow | ExportFormat::ArrowStream => {
+                job.columnar(&labels, options.format)?
+            }
         };
         if matches!(options.format, ExportFormat::Json | ExportFormat::Jsonl) {
             validate_json(&stage.file, options.format == ExportFormat::Json, context)?;
@@ -981,7 +992,9 @@ impl super::TableSource for SqliteAdapter {
                     ExportFormat::Json | ExportFormat::Jsonl => {
                         "Binary cells use tagged hexadecimal objects in JSON."
                     }
-                    ExportFormat::Parquet => "Binary cells are Parquet BINARY values.",
+                    ExportFormat::Parquet | ExportFormat::Arrow | ExportFormat::ArrowStream => {
+                        "Binary cells retain native binary values."
+                    }
                 }
                 .into(),
             );
@@ -1175,9 +1188,9 @@ impl Export<'_> {
         Ok((written, binary))
     }
 
-    /// Parquet needs one type per column: a first pass records each column's
+    /// Columnar output needs one type per column: a first pass records each column's
     /// storage classes; mixed classes fail instead of being coerced.
-    fn parquet(&self, labels: &[&str]) -> AppResult<(u64, bool)> {
+    fn columnar(&self, labels: &[&str], format: ExportFormat) -> AppResult<(u64, bool)> {
         use arrow_array::{builder::*, ArrayRef, RecordBatch};
         use arrow_schema::{DataType, Field, Schema};
         #[derive(Clone, Copy, Default)]
@@ -1210,10 +1223,10 @@ impl Export<'_> {
             .map(|(s, label)| {
                 let classes = usize::from(s.int || s.real) + usize::from(s.text) + usize::from(s.blob);
                 if classes > 1 {
-                    return Err(AppError::new(ErrorCode::Export, format!("{label} mixes numbers, text and/or blobs; Parquet needs one type per column. Export CSV, TSV, JSON or JSONL, or filter the view.")));
+                    return Err(AppError::new(ErrorCode::Export, format!("{label} mixes numbers, text and/or blobs; Columnar output needs one type per column. Export CSV, TSV, JSON or JSONL, or filter the view.")));
                 }
                 Ok(if s.real && s.int && s.wide {
-                    return Err(AppError::new(ErrorCode::Export, format!("{label} mixes REAL values with integers beyond 2^53, which a Parquet DOUBLE column would round.")));
+                    return Err(AppError::new(ErrorCode::Export, format!("{label} mixes REAL values with integers beyond 2^53, which a DOUBLE column would round.")));
                 } else if s.real {
                     DataType::Float64
                 } else if s.int {
@@ -1237,10 +1250,7 @@ impl Export<'_> {
             .create_new(true)
             .open(self.file)
             .map_err(AppError::io)?;
-        let mut writer =
-            parquet::arrow::ArrowWriter::try_new(file, schema.clone(), None).map_err(|e| {
-                AppError::new(ErrorCode::Export, format!("Could not write Parquet: {e}"))
-            })?;
+        let mut writer = crate::columnar::Writer::new(file, schema.clone(), format)?;
         let mut builders: Vec<Box<dyn ArrayBuilder>> = types
             .iter()
             .map(|t| -> Box<dyn ArrayBuilder> {
@@ -1254,7 +1264,7 @@ impl Export<'_> {
             .collect();
         let mut pending = 0usize;
         let flush = |builders: &mut Vec<Box<dyn ArrayBuilder>>,
-                     writer: &mut parquet::arrow::ArrowWriter<std::fs::File>|
+                     writer: &mut crate::columnar::Writer|
          -> AppResult<()> {
             let arrays: Vec<ArrayRef> = builders.iter_mut().map(|b| b.finish()).collect();
             let batch = RecordBatch::try_new(schema.clone(), arrays).map_err(|e| {
@@ -1263,9 +1273,7 @@ impl Export<'_> {
                     format!("Could not build Parquet rows: {e}"),
                 )
             })?;
-            writer.write(&batch).map_err(|e| {
-                AppError::new(ErrorCode::Export, format!("Could not write Parquet: {e}"))
-            })
+            writer.write(&batch)
         };
         let mut binary = false;
         let written = self.rows(|row| {
@@ -1329,9 +1337,7 @@ impl Export<'_> {
         if pending > 0 || written == 0 {
             flush(&mut builders, &mut writer)?;
         }
-        writer.close().map_err(|e| {
-            AppError::new(ErrorCode::Export, format!("Could not finish Parquet: {e}"))
-        })?;
+        writer.finish()?;
         Ok((written, binary))
     }
 }

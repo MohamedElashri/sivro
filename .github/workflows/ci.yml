@@ -64,7 +64,7 @@ jobs:
       - run: git diff --exit-code
 
   gui-e2e:
-    name: Linux GUI end-to-end (all seven formats, online and offline)
+    name: Linux GUI end-to-end (all input formats, online and offline)
     if: *not-release
     runs-on: ubuntu-24.04
     steps:

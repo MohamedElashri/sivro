@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added Arrow IPC file/stream and Feather V2 input and export, with LZ4/ZSTD
+  reading and exact values. See [format limits](docs/formats.md#arrow-ipc-and-feather-v2).
+
 ## 0.1.1
 
 - Replaced the warm-paper theme with contrast-adjusted Catppuccin Latte

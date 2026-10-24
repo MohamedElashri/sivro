@@ -1,4 +1,4 @@
-//! Hardening: all seven families through one session API, repeated
+//! Hardening: all input families through one session API, repeated
 //! open/close, interleaved and cancelled work, refresh, scratch quotas,
 //! source-alias export guards, and the self-contained DuckDB engine.
 use super::e2e_fixtures::{write_all, FILES};
@@ -334,6 +334,8 @@ async fn exports_from_every_family_refuse_sources_aliases_and_existing_files() {
         }
         // The source itself is refused (its own extension, so the format check passes).
         let own = match path.extension().unwrap().to_str().unwrap() {
+            "arrow" => ExportFormat::Arrow,
+            "arrows" => ExportFormat::ArrowStream,
             "parquet" => ExportFormat::Parquet,
             "csv" => ExportFormat::Csv,
             "tsv" => ExportFormat::Tsv,
@@ -342,7 +344,7 @@ async fn exports_from_every_family_refuse_sources_aliases_and_existing_files() {
         };
         if matches!(
             path.extension().unwrap().to_str().unwrap(),
-            "parquet" | "csv" | "tsv" | "jsonl"
+            "parquet" | "arrow" | "arrows" | "csv" | "tsv" | "jsonl"
         ) {
             assert_eq!(
                 export(path.clone(), own).await.unwrap_err().code,
