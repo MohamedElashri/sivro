@@ -58,12 +58,12 @@ jobs:
         run: |
           set -euo pipefail
           awk -v heading="## ${RELEASE_TAG#v}" '
-            $0 == heading { found = 1; next }
+            $0 == heading || index($0, heading " - ") == 1 { found = 1; next }
             found && /^## / { exit }
             found { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/release-body.md"
           if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-body.md"; then
-            echo "CHANGELOG.md must contain a nonempty section headed ## ${RELEASE_TAG#v}." >&2
+            echo "CHANGELOG.md must contain release notes for ${RELEASE_TAG#v}." >&2
             exit 1
           fi
 

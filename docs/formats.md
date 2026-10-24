@@ -1,205 +1,129 @@
 # Formats and behaviour
 
-Sivro reads Parquet (`.parquet`, `.pq`), Arrow IPC / Feather V2
-(`.arrow`, `.ipc`, `.feather`, `.arrows`), HDF5 (`.h5`, `.hdf5`, `.hdf`), CSV (`.csv`), TSV (`.tsv`), JSON
-(`.json`), JSON Lines (`.jsonl`, `.ndjson`), Excel (`.xlsx`, `.xlsm`, `.xlsb`,
-`.xls`) and SQLite (`.sqlite`, `.sqlite3`, `.db`). It never modifies a source.
-Release limitations are summarized in the [changelog](../CHANGELOG.md).
+Sivro opens local files read-only. Tables support search, filters, sorting,
+profiles, copying and export. **Refresh** reopens changed files and retains
+format selections. **Cancel work** stops operations. Filtered counts and
+profiles are computed on demand.
 
-## Common workflow
-
-Every format shares one workflow: multiple tabs, recent files, drag/drop,
-schema and row-group details, a paged grid, search, filters, sorting, column
-profiles, nested row inspection, copying and a 1,500-row sample generator.
-Exports support Parquet, Arrow IPC files/streams, HDF5, CSV, TSV, **JSON arrays** and
-**JSON Lines**. Queries use backend-owned sessions and column IDs; exact numbers
-travel as tagged text. The first page uses the Parquet metadata count for an
-unfiltered view. Filtered views offer **Count rows** on demand, while profiles
-are computed when requested. **Refresh** explicitly reopens a changed source
-and resets its view; **Cancel work** interrupts queued or active operations.
+| Format | Extensions | Opening |
+| --- | --- | --- |
+| Parquet | `.parquet`, `.pq` | Table with schema and row-group metadata |
+| Arrow IPC / Feather V2 | `.arrow`, `.ipc`, `.arrows`, `.feather` | File or stream table |
+| HDF5 | `.h5`, `.hdf5`, `.hdf` | Group/dataset browser |
+| CSV / TSV | `.csv`, `.tsv` | Parsing preview |
+| JSON | `.json` | Record table or document tree |
+| JSON Lines | `.jsonl`, `.ndjson` | Record table |
+| Excel | `.xlsx`, `.xlsm`, `.xlsb`, `.xls` | Worksheet/header picker |
+| SQLite | `.sqlite`, `.sqlite3`, `.db` | Table/view picker |
 
 ## Exports
 
-Exports preserve the loaded projection, filters and sort. A row-cap warning
-identifies omitted rows. Existing destinations, source paths and aliases are
-never overwritten; choose a new filename. CSV/TSV use `\N` for NULL and reject a
-literal value equal to that marker. Binary cells export as `hex:` text in CSV/TSV
-and `{ "$binary_hex": "...", "byteCount": "..." }` in JSON/JSONL. JSON exports reject
-non-finite numbers; Parquet and Arrow retain native types. Row copying keeps large
-numbers as JSON numbers and uses strings for NaN/Infinity with a visible note.
-Grid previews are bounded; expansion/copy is capped at 1 MiB.
+Exports retain the loaded columns, filters and sort, with warnings for capped
+rows. Sources, aliases and existing files are never overwritten. Duplicate or
+blank labels use column IDs as keys.
+
+| Output | Value handling |
+| --- | --- |
+| CSV / TSV | NULL is `\N`; colliding literal values are rejected. Binary uses `hex:` text. |
+| JSON / JSONL | Exact numeric tokens and nested JSON are retained; binary uses tagged hex objects. NaN/Infinity are rejected. |
+| Parquet / Arrow | Native types and binary; wide integers must fit `DECIMAL(38,0)`. Exact JSON-number columns are rejected; nested JSON becomes text. |
+| HDF5 | Native values plus annotations and null masks; see below. |
+
+Copying preserves large numbers; NaN/Infinity copy as strings with a note.
+Expanded cells and copied values are limited to 1 MiB.
 
 ## Arrow IPC and Feather V2
 
-Open `.arrow`, `.ipc`, `.feather` or `.arrows`; framing selects the file/stream
-reader. Feather V2, legacy stream framing, multiple batches, dictionaries,
-LZ4 and ZSTD are supported. Feather V1, Flight and tensor messages are not.
-File details show the original schema and metadata.
+IPC files/streams support multiple batches, dictionaries, LZ4 and ZSTD.
+Feather V1, Flight and tensor messages are unsupported. File details expose
+the original schema and metadata.
 
-Common scalars, exact decimals, lists, structs and maps use native query types.
-Types without an exact query representation use labelled text fallbacks,
-including Decimal256/negative-scale decimals, Date64, nanosecond times,
-zoned nanosecond timestamps, durations, intervals, unions, list views and
-run-end encoding. Dictionaries decode to values; extension types use storage
-types. Nested types containing fallbacks become text as a whole.
+Scalars and supported nested values use native query types. Other types,
+including Decimal256, negative-scale decimals and certain temporal types, use
+labelled text fallbacks. Dictionaries decode to values; extension types use
+storage types. Unsupported nested children make the whole value text.
 
-Limits: 256 MiB input, 128 MiB per encoded/decoded message or batch, 8 MiB
-metadata/footer, and 1 GiB cumulative decoded buffers/scratch. Opening validates
-and stages every batch within the shared time budget.
-
-Export **Arrow / Feather V2** for an uncompressed IPC file or **Arrow IPC stream**
-for a stream. Both preserve the loaded view and current query types, including
-binary and NaN/Infinity. Original metadata, dictionaries, extensions and timezone
-labels are not retained. Wide integers must fit `DECIMAL(38,0)`; exact JSON-number
-columns are rejected, and nested JSON becomes text. Mixed SQLite columns follow
-Parquet's homogeneous-type and exact-integer checks.
+Exports use uncompressed IPC and current query types. Original dictionary
+encoding, metadata, extension annotations and timezone labels are not retained.
 
 ## HDF5
 
-Choose a dataset in the group browser, then select row/column axes, fixed
-indices and an optional row window. Compound fields become columns; equally
-sized 1D datasets can open as a column group. **Dataset:** reopens the picker;
-Refresh retains the selection. Scalars have one row; empty/null dataspaces have none.
+Choose a dataset, axes, fixed indices and row window. Compound fields and
+equal-length vectors can become columns. **Dataset:** changes the selection.
+Scalars have one row; empty/null dataspaces have none.
 
-| Supported | Behaviour |
-| --- | --- |
-| Layout v3/v4/v5 | Compact, contiguous and all five modern chunk indexes; user blocks |
-| Filters | Deflate, shuffle, Fletcher32, N-bit, scale-offset and LZF |
-| Values | Exact integers through 128 bits; Float16/32/64; UTF-8; enums; nested/variable-length values |
-| Metadata | Attributes, types, shapes, chunks and filters |
+Supports layout v3/v4/v5, modern chunk indexes, user blocks, deflate, shuffle,
+Fletcher32, N-bit, scale-offset and LZF. Integers through 128 bits stay exact;
+nested values use JSON, with non-finite floats as strings. Opaque, reference
+and unsupported numeric values remain bytes. Strings require UTF-8.
 
-Nested values use exact JSON; opaque/reference/time/nonstandard float values
-remain bytes. Soft/external links, external/virtual storage and external filter
-plugins are unsupported. Application-specific pandas/PyTables/MATLAB objects
-are not reconstructed. Reading uses pure Rust and never modifies the source.
+Soft/external links, external/virtual storage and external filter plugins are
+unsupported. pandas, PyTables and MATLAB object conventions are not reconstructed.
 
-Limits: 4 GiB input, 64 MiB per read/chunk/leading row, 8 MiB metadata,
-4,096 objects/columns, rank 32, 2 million cells and 1 million B-tree chunks.
-Large inner planes
-may exceed these limits even for a small slice; decoded values also share the
-scratch and opening-time budgets.
-
-Exports write `/table/col-NNNN` datasets and `/_sivro_validity` masks (0 NULL,
-1 present). Attributes preserve names, logical types and reversible encodings
-for decimal/temporal/JSON/binary/NUL text. Reopen `/table` as columns; other tools
-must apply those annotations. Exports preserve the selected view, not the source
-hierarchy, and have 64 MiB cell/encoded buffers. Mixed SQLite storage classes
-or wide integers mixed with reals fail explicitly.
+Exports use `/table/col-NNNN`, `/_sivro_validity` masks (0 NULL, 1 present) and
+`sivro.*` attributes for names, types and encodings. Reopen `/table` as columns;
+other tools must apply the annotations. Original hierarchy and metadata are
+not preserved.
 
 ## CSV and TSV
 
-CSV and TSV first open a **parsing preview**. Confirm the delimiter (comma/tab
-by default, or `auto`), header, quote/escape, NULL marker and types. UTF-8 with
-an optional BOM is supported; other encodings fail explicitly. Inference samples
-at most 20,480 data records and selects exact integers/decimals, booleans or text.
-Dates, exponent notation and numbers beyond exact supported numeric widths stay
-text unless explicitly overridden. Preview cells show original text alongside
-the proposed types. **Force text** preserves leading-zero IDs and numeric
-spelling. Per-column overrides take precedence; explicitly choosing DOUBLE may
-round values. Later rows incompatible with the frozen schema fail and require
-reopening; malformed records are never intentionally skipped. Blank physical
-lines are ignored by the scanner.
+Confirm delimiter, header, quoting, NULL marker and types in the preview.
+UTF-8 supports an optional BOM. Inference samples 20,480 records; **Force text**
+preserves numeric spelling. Floating point conversion may round values.
+Malformed records and later type mismatches fail.
 
-The default NULL marker is an unquoted `\N`: quoted `"\N"` and empty text stay
-text. Choosing an empty NULL marker makes unquoted empty fields NULL. Use
-**Parsing settings** to reopen with different options; Refresh retains the
-confirmed schema/options, and a changed header requires a new preview. Duplicate
-and blank labels retain separate column IDs. When labels are ambiguous, row
-JSON copy and exports use column IDs as keys/headers and report that choice.
-CSV/TSV row counts remain unknown until **Count rows** is requested. Delimited
-exports preserve values rather than original quoting or numeric formatting;
-reopen as text when lexical spelling matters.
+The default NULL marker is an unquoted `\N`; quoted `"\N"` and empty text remain
+text. An empty marker makes unquoted empty fields NULL. Blank lines are skipped.
+**Parsing settings** changes the configuration; Refresh retains it. Exports
+preserve values, not original formatting.
 
 ## JSON and JSON Lines
 
-JSON and JSON Lines open without a dialog; the whole file is validated when it
-opens. A `.json` file whose root is an array of objects, and every JSON Lines
-file, opens as a table. Any other `.json` root (an object, a single value, an
-array of scalars or of mixed values, an empty array) opens in a **document
-view**: a lazily expanded tree, 100 children at a time, limited to 32 MiB and
-nesting depth 64. **Copy JSON** copies any node as formatted JSON, up to 1 MiB.
-Numbers are never converted to JavaScript numbers. Values are exact source
-tokens, except that exponents are written as `e+`/`e-` (`1E5` shows as `1e+5`).
-Key order and repeated keys are kept.
+A `.json` array of objects opens as a table; other roots use a document tree.
+JSON Lines requires one value per nonblank line; object and scalar/array records
+cannot be mixed. Documents retain duplicate keys, order and exact numbers;
+exponents are normalized.
 
-Record tables read every record once when opening. Field types therefore come
-from all records, not a sample; a key first seen late still becomes a column.
-Integers use `BIGINT`/`HUGEINT` and decimals use exact `DECIMAL(p,s)`. Numbers
-with exponents or more than 38 digits become `JSON_NUMBER`: the grid shows the
-exact token, equality compares exact token text (`1.0` and `1` differ), and
-sorting, range filters and min/max are disabled. Nested or mixed-type fields
-become `JSON_VALUE` text with text matching and NULL checks. JSON Lines skips
-blank lines; every other line must hold exactly one JSON value, and errors name
-the 1-based line. Records over 16 MiB are rejected. Objects and scalar/array
-records cannot be mixed. Scalar or array lines form a single `value` column.
-Repeated keys become separate columns with the same label. Typed columns show
-missing keys and JSON `null` both as NULL; **Show source record** in the row
-panel shows the record itself. JSON Lines keeps each exact line; `.json`
-array elements are re-serialized with exact values. Records are staged in
-session scratch, so a source may be at most half the 1 GiB scratch budget.
-If a `.json` file holds JSON Lines (or the reverse), opening reports the mismatch
-and offers an explicit **Reopen as…** choice.
-
-JSON/JSONL exports from these tables write exact tokens and nested values
-unquoted. Parquet and Arrow exports refuse `JSON_NUMBER` columns because these
-exports cannot retain their exact source tokens, and write `JSON_VALUE` as text.
-For every reader, `HUGEINT` is written to Parquet and Arrow as `DECIMAL(38,0)`;
-DuckDB's Parquet writer would otherwise store it as `DOUBLE`. Values beyond
-38 digits make the export fail.
+Tables validate every record. Exponents and oversized numbers use `JSON_NUMBER`:
+equality compares text (`1.0` differs from `1`); sorting, ranges and min/max are
+disabled. Nested/mixed values use JSON text. Missing fields and JSON `null` both
+appear as NULL; **Show source record** exposes the source record.
 
 ## Excel
 
-Excel workbooks open in a **workbook dialog**. Pick one worksheet (hidden sheets
-are labelled; chart, dialog and macro sheets cannot be opened) and a header row,
-or choose no header to name columns A, B, …. Rows above the header are not
-shown, and the count of skipped cells is reported. **Sheet:** in the toolbar
-reopens the dialog; the choice is frozen per session and kept by Refresh. Sivro
-reads only the values Excel cached when the workbook was saved: formulas are
-never recalculated, and macros (`.xlsm`) are never run or exposed. A formula
-without a cached value is tagged `{"$excel_formula": …, "$no_cached_value": true}`.
+Choose a worksheet/header, or column letters without a header. **Sheet:**
+changes the selection; Refresh retains it. Values use the saved cache;
+formulas are not recalculated, macros do not run, and encryption is unsupported.
 
-Each column gets one native type: `BIGINT` for whole numbers up to 2^53,
-`DOUBLE`, `BOOLEAN`, `VARCHAR`, `DATE`, `TIMESTAMP` or `TIME`. Excel stores
-numbers as binary doubles; Sivro shows the shortest decimal that round-trips,
-which can differ from Excel's 15-digit display (`0.30000000000000004`). Dates
-follow the workbook's 1900 or 1904 system at millisecond resolution. Serial 60
-in the 1900 system (Excel's fictional 1900-02-29) and out-of-range serials are
-tagged rather than shifted. A column that mixes value kinds, or contains errors
-or uncached formulas, keeps tagged JSON text such as
-`{"$excel_error":"#DIV/0!"}` and reports `mixed_types`. A blank cell is NULL;
-an empty text cell stays empty text.
-
-Workbooks are checked before parsing:
-- `.xlsx`/`.xlsm`/`.xlsb` up to 50 MiB, with decompressed parts limited to
-  128 MiB each and 256 MiB in total; parts over 1 MiB that compress more than
-  1,000:1 are refused;
-- `.xls` up to 16 MiB;
-- a sheet's used range up to 200,000 cells. The range is checked while cells
-  stream in, so a sheet whose cells sit at A1 and XFD1048576 is refused at once.
-
-`.xls` files are parsed in full when opened, so their limit covers every sheet
-together, including the extent each sheet *declares*. Encrypted workbooks are
-not supported.
+Numbers retain Excel's stored double precision. Dates use the workbook's
+1900/1904 system at millisecond resolution; serial 60 and out-of-range dates
+remain tagged values. Errors, uncached formulas and mixed-type columns use
+tagged JSON text. Blank cells are NULL; empty text remains empty text.
 
 ## SQLite
 
-SQLite databases open in a **table/view picker**. Virtual tables are listed
-but not opened, because they run extension modules, and internal tables are
-hidden. **Table:** in the toolbar picks another object. Sivro opens the file
-with a read-only connection, `query_only`, `trusted_schema=OFF` and an
-authorizer that allows only reads. It never writes, attaches a database or
-accepts SQL. Pages are read live: commits from another writer appear on the
-next page and reset cached counts, while a schema change asks for **Refresh**.
+Select a table or view; virtual/internal tables are unavailable. Reads reflect
+other writers' commits; schema changes require Refresh. Cells retain storage
+classes and exact 64-bit integers; invalid UTF-8 becomes bytes. Views have no
+stable row order. Case-insensitive search applies to ASCII only.
 
-Each cell shows its own SQLite storage class (integer, real, text or blob),
-whatever the column's declared type. 64-bit integers stay exact, an empty
-BLOB is not NULL, and text that isn't valid UTF-8 is shown as bytes. Rows are
-ordered by rowid or the primary key, which also breaks sort ties. Views have
-no stable key, so their row order can shift when the database changes. Text
-search uses SQLite `LIKE`, which ignores case only for ASCII letters. Parquet
-and Arrow exports refuse a column that mixes numbers, text and BLOBs. CSV, TSV, JSON
-and JSONL keep each cell's representation.
+Parquet, Arrow and HDF5 exports reject mixed storage classes or combinations
+that would lose numeric precision. WAL databases require their `-wal`/`-shm`
+sidecars; opening a writable directory may create them without changing the
+database content.
 
-A WAL-mode database needs its `-wal`/`-shm` files. Reading it in a writable
-folder may create them; Sivro reports this, and the database content does not
-change. In a read-only folder without them, it cannot be read.
+## Default limits
+
+| Input | Limits |
+| --- | --- |
+| Arrow | 256 MiB file; 128 MiB message/batch; 8 MiB metadata; 1 GiB cumulative decoded buffers |
+| HDF5 | 4 GiB file; 64 MiB read/chunk/leading row; 8 MiB metadata; rank 32; 2 million selected cells; 1 million B-tree chunks |
+| HDF5 export | 64 MiB each for collected cells and encoded values |
+| JSON document | 32 MiB; nesting depth 64 |
+| JSON record table | 512 MiB input; 16 MiB per JSON Lines record |
+| Excel | 50 MiB workbook (`.xls`: 16 MiB); 200,000 cells; 128 MiB per expanded part and 256 MiB total |
+
+Shared limits: 30 seconds per operation, 4,096 columns, 1 GiB scratch,
+512 MiB DuckDB memory and 10 million exported rows. Large HDF5 planes or Excel
+used ranges may exceed limits despite a small selection. These are operation
+budgets, not a hard process-memory cap.
