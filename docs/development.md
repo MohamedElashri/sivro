@@ -75,7 +75,7 @@ the real app. Synthetic interoperability fixtures live in `tests/fixtures/`.
 
 1. From current `main`, run `npm version X.Y.Z --no-git-tag-version`.
    This synchronizes Cargo and npm metadata from `package.json`.
-2. Add a concise `## X.Y.Z` section to `CHANGELOG.md`; it supplies release notes.
+2. Add `## X.Y.Z - YYYY-MM-DD` to `CHANGELOG.md` with concise release notes.
    Validate with `RELEASE_TAG=vX.Y.Z npm run version:check` and run
    `make ci build app test-e2e test-e2e-offline`.
 3. Commit the release files, then tag and push together:

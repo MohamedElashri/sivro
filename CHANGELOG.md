@@ -1,8 +1,6 @@
 # Changelog
 
-## Unreleased
-
-## 0.1.2
+## 0.1.2 - 2026-10-24
 
 - Added HDF5 browsing, attributes, multidimensional slices and exact-value exports.
   Supports layout v3/v4/v5; see [format limits](https://github.com/MohamedElashri/sivro/blob/v0.1.2/docs/formats.md#hdf5).
