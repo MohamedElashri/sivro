@@ -32,6 +32,15 @@ pub(super) async fn open_any(
             }),
             ..Default::default()
         }
+    } else if name.ends_with(".h5") {
+        OpenOptions {
+            hdf5: Some(Hdf5Options {
+                object: "/".into(),
+                columns: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
     } else if name.ends_with(".sqlite") {
         OpenOptions {
             sqlite: Some(SqliteOptions {
@@ -198,8 +207,8 @@ async fn interleaved_and_cancelled_work_across_families_stays_consistent() {
     for file in FILES {
         infos.push(open_any(&state, &fixtures.join(file)).await.unwrap());
     }
-    let mut jobs = Vec::new();
     for round in 0..6 {
+        let mut jobs = Vec::new();
         for info in infos.iter().filter(|i| i.document.is_none()) {
             let (s, info) = (state.clone(), info.clone());
             let cancel = round % 2 == 1;
@@ -238,9 +247,10 @@ async fn interleaved_and_cancelled_work_across_families_stays_consistent() {
                 assert!(c.is_ok(), "{:?}", c.err());
             }));
         }
-    }
-    for job in jobs {
-        job.await.unwrap();
+        // Keep each format interleaved without exceeding the reservation cap.
+        for job in jobs {
+            job.await.unwrap();
+        }
     }
     for info in &infos {
         touch(&state, info).await.unwrap();
@@ -334,6 +344,7 @@ async fn exports_from_every_family_refuse_sources_aliases_and_existing_files() {
         }
         // The source itself is refused (its own extension, so the format check passes).
         let own = match path.extension().unwrap().to_str().unwrap() {
+            "h5" => ExportFormat::Hdf5,
             "arrow" => ExportFormat::Arrow,
             "arrows" => ExportFormat::ArrowStream,
             "parquet" => ExportFormat::Parquet,
@@ -344,7 +355,7 @@ async fn exports_from_every_family_refuse_sources_aliases_and_existing_files() {
         };
         if matches!(
             path.extension().unwrap().to_str().unwrap(),
-            "parquet" | "arrow" | "arrows" | "csv" | "tsv" | "jsonl"
+            "parquet" | "h5" | "arrow" | "arrows" | "csv" | "tsv" | "jsonl"
         ) {
             assert_eq!(
                 export(path.clone(), own).await.unwrap_err().code,

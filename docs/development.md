@@ -21,7 +21,10 @@ DuckDB archives; later builds work offline.
 
 ## Make targets
 
-CI runs the same targets; `make help` lists them all.
+CI runs formatting/frontend checks first, then Clippy, backend and GUI tests
+on one Linux runner. Cargo, DuckDB and WebDriver caches are reused; GUI tests
+use `make app-debug`, while releases still test the release binary.
+`make help` lists all targets.
 
 | Target | Does |
 |---|---|
@@ -47,12 +50,10 @@ TypeScript/Vite frontend in `src`.
   a scratch directory. At most two expensive operations run at once; a 30 s
   budget interrupts native work, and refresh or close invalidates the
   generation so late replies are dropped.
-- **Readers** (`adapters/`): Parquet, Arrow IPC/Feather V2, CSV/TSV, JSON/JSONL
-  record tables and Excel run on DuckDB through the `TableSource` trait; JSON and Excel data is
-  first staged into session scratch (`stage.rs`). Arrow uses bounded IPC reads
-  and DuckDB's native Arrow bridge (`arrow.rs`). JSON documents use a bounded
-  in-memory tree. SQLite uses its own read-only rusqlite connection with an
-  authorizer that allows only reads.
+- **Readers** (`adapters/`): tabular readers share the DuckDB `TableSource`
+  interface. Arrow uses its native bridge; HDF5 stages bounded selections with
+  a patched `hdf5-pure` ([vendor notes](../src-tauri/vendor/hdf5-pure/PATCHES.md)).
+  JSON documents use a bounded tree; SQLite uses a read-only rusqlite connection.
 - **Queries** (`query/`): the frontend sends typed filters, column IDs, sorts
   and paging, never SQL. Rust compiles them with allow-listed identifiers and
   bound values, separately for DuckDB and SQLite.
@@ -88,7 +89,7 @@ which the Makefile adds automatically.
   About focus and pending-view tab indicators.
 - **Frontend** (`tests/frontend.test.mjs`): mocked IPC, stale replies,
   dialogs, filters and exports.
-- **Backend** (`src-tauri/src/tests`): every reader end to end, seven-format
+- **Backend** (`src-tauri/src/tests`): every reader end to end, eight-format
   export round trips, precision fixtures, hostile inputs, resource limits,
   cancellation, refresh and read-only guarantees.
 - **Library checks:** isolated checks of the DuckDB, Calamine and rusqlite
@@ -98,6 +99,10 @@ which the Makefile adds automatically.
   inside a loopback-only network namespace. Use `xvfb-run -a` when headless;
   Ubuntu 24.04 needs `kernel.apparmor_restrict_unprivileged_userns=0` for the
   offline run.
+
+HDF5 interoperability fixtures cover v3/v4/v5 and all modern chunk indexes.
+Run the ignored `write_hdf5_interop_export` test with `SIVRO_HDF5_EXPORT=PATH`,
+then `uv run --with h5py tests/fixtures/hdf5/verify_exports.py PATH`.
 
 Fixtures are synthetic. On a Ryzen 7 7735H, 1M-row sources open in 14 ms
 (Parquet), ~200 ms (CSV/TSV) and ~5–6 s (JSON/JSONL, which are staged), with

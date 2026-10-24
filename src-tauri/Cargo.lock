@@ -2005,6 +2005,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hdf5-pure"
+version = "0.47.0"
+dependencies = [
+ "byteorder",
+ "flate2",
+]
+
+[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4362,6 +4370,7 @@ dependencies = [
  "calamine",
  "duckdb",
  "fs2",
+ "hdf5-pure",
  "lz4_flex",
  "parquet",
  "rusqlite",

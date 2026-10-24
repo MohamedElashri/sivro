@@ -42,6 +42,7 @@ impl ExportStage {
             .unwrap_or("")
             .to_ascii_lowercase();
         let valid = match format {
+            ExportFormat::Hdf5 => matches!(extension.as_str(), "h5" | "hdf5" | "hdf"),
             ExportFormat::Parquet => matches!(extension.as_str(), "parquet" | "pq"),
             ExportFormat::Arrow => matches!(extension.as_str(), "arrow" | "ipc" | "feather"),
             ExportFormat::ArrowStream => matches!(extension.as_str(), "arrows" | "ipc" | "arrow"),
@@ -225,7 +226,7 @@ pub fn export(
     // DuckDB's JSON writer would quote them or reparse them as doubles.
     let token_writer = matches!(
         adapter.format,
-        FormatKind::Json | FormatKind::Jsonl | FormatKind::Excel
+        FormatKind::Json | FormatKind::Jsonl | FormatKind::Excel | FormatKind::Hdf5
     ) && matches!(options.format, ExportFormat::Json | ExportFormat::Jsonl);
     let labels = compiled
         .selected
@@ -253,6 +254,7 @@ pub fn export(
         .collect::<Vec<_>>()
         .join(", ");
     let output = match options.format {
+        ExportFormat::Hdf5 => return Err(AppError::internal()),
         ExportFormat::Arrow | ExportFormat::ArrowStream => "",
         ExportFormat::Parquet => "FORMAT PARQUET",
         ExportFormat::Csv => "FORMAT CSV, HEADER true, DELIMITER ',', NULL '\\N'",
@@ -374,7 +376,10 @@ pub fn export(
             ExportFormat::Csv | ExportFormat::Tsv => {
                 warnings.push("Binary cells use hex:-prefixed text in CSV/TSV.".into())
             }
-            ExportFormat::Parquet | ExportFormat::Arrow | ExportFormat::ArrowStream => (),
+            ExportFormat::Hdf5
+            | ExportFormat::Parquet
+            | ExportFormat::Arrow
+            | ExportFormat::ArrowStream => (),
         }
     }
     if found > options.max_rows {
@@ -459,6 +464,10 @@ fn write_json_tokens(
             line.push(b':');
             match row.get::<_, Option<String>>(i).map_err(AppError::query)? {
                 None => line.extend_from_slice(b"null"),
+                Some(value) if column.kind == ColumnKind::Binary => {
+                    let tagged = serde_json::json!({ "$binary_hex": value, "byteCount": (value.len()/2).to_string() });
+                    serde_json::to_writer(&mut line, &tagged).map_err(|_| AppError::internal())?;
+                }
                 Some(value)
                     if matches!(column.kind, ColumnKind::Number | ColumnKind::Bool)
                         || column.data_type == sql::JSON_VALUE =>

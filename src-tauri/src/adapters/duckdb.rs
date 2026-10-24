@@ -17,6 +17,7 @@ use std::{
 
 pub struct DuckDbAdapter {
     pub format: FormatKind,
+    pub hdf5: Option<Hdf5Selection>,
     pub arrow: Option<ArrowInfo>,
     pub delimited: Option<super::delimited::FrozenOptions>,
     pub excel: Option<ExcelSelection>,
@@ -65,6 +66,7 @@ impl DuckDbAdapter {
             document: None,
             excel: self.excel.clone(),
             sqlite: None,
+            hdf5: self.hdf5.clone(),
             arrow: self.arrow.clone(),
         }
     }

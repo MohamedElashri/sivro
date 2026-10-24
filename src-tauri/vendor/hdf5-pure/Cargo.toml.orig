@@ -1,0 +1,395 @@
+[package]
+name = "hdf5-pure"
+version = "0.47.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+description = "Pure-Rust HDF5 library: read, write, and edit files in place (WASM-compatible, no C dependencies)"
+repository = "https://github.com/CramBL/hdf5-pure"
+keywords = ["hdf5", "serialization", "scientific", "no-std", "wasm"]
+categories = ["science", "encoding", "filesystem", "wasm", "no-std"]
+# What the published crate holds: the library, the examples, the guide pages
+# `src/_guide/` includes into the documentation, and the documents a user reads. Tests, test data
+# and tooling stay in the repository.
+include = [
+    "/src/**",
+    "/examples/**",
+    "/docs/guide/compound-types.md",
+    "/docs/guide/compression.md",
+    "/docs/guide/editing.md",
+    "/docs/guide/file-space.md",
+    "/docs/guide/generic-io.md",
+    "/docs/guide/groups-attributes.md",
+    "/docs/guide/ndarray.md",
+    "/docs/guide/portability.md",
+    "/docs/guide/reading.md",
+    "/docs/guide/repack.md",
+    "/docs/guide/streaming.md",
+    "/docs/guide/swmr.md",
+    "/docs/guide/vlen-strings.md",
+    "/docs/guide/writing.md",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE-*",
+]
+
+# Publish the full public API on docs.rs. The default feature set hides the
+# `ndarray`, `serde` (`mat`), `zfp`, and `provenance` surfaces (and
+# leaves their cross-references as dead links).
+[package.metadata.docs.rs]
+features = ["provenance", "zfp", "ndarray", "serde", "num-complex"]
+# `src/lib.rs` enables rustdoc's `doc_cfg` under this cfg, so each gated
+# item shows the feature that brings it.
+rustdoc-args = ["--cfg", "docsrs"]
+
+# Ignore documentation-only guide modules that contain no Rust items.
+[package.metadata.cargo-shear]
+ignored-paths = ["src/_guide/*.rs"]
+
+# The supporting packages: the tests that link the reference C library, so that
+# nothing else does, and the helpers the tests share. `fuzz` keeps its own
+# lockfile.
+[workspace]
+members = ["crates/*"]
+exclude = ["fuzz"]
+
+[workspace.lints.rust]
+macro_use_extern_crate = "warn"
+meta_variable_misuse = "warn"
+non_ascii_idents = "warn"
+redundant_lifetimes = "warn"
+trivial_casts = "warn"
+unexpected_cfgs = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+variant_size_differences = "warn"
+
+# Allowed today and to be turned on.
+# TODO: public items.
+missing_docs = "allow"
+# TODO
+missing_debug_implementations = "allow"
+# TODO
+missing_copy_implementations = "allow"
+# TODO
+elided_lifetimes_in_paths = "allow"
+# TODO
+single_use_lifetimes = "allow"
+# TODO: each item becomes `pub(crate)`. The crate root is the API.
+unreachable_pub = "allow"
+# TODO
+trivial_numeric_casts = "allow"
+# TODO
+unused_qualifications = "allow"
+# TODO
+let_underscore_drop = "allow"
+# TODO
+unnameable_types = "allow"
+# TODO: each site carries an `expect` with the reason.
+unsafe_code = "allow"
+
+[workspace.lints.clippy]
+# Panics. A file is untrusted input, so a panic on one is a bug. clippy.toml
+# allows unwrap, expect, indexing and panic in tests.
+dbg_macro = "warn"
+exit = "warn"
+mem_forget = "warn"
+panic_in_result_fn = "warn"
+todo = "warn"
+unimplemented = "warn"
+unreachable = "warn"
+
+# Error handling: an error is returned to the caller or converted, never dropped.
+map_err_ignore = "warn"
+
+# `no_std`: everything below the filesystem API imports from `core` and `alloc`.
+alloc_instead_of_core = "warn"
+
+# unsafe.
+undocumented_unsafe_blocks = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+
+# A directory module is its mod.rs.
+self_named_module_files = "warn"
+
+# Numeric casts and float comparisons. The truncating casts are denied on a 32-bit target by
+# `just portability::cast-gate`, where they can fire.
+as_ptr_cast_mut = "warn"
+char_lit_as_u8 = "warn"
+float_cmp_const = "warn"
+fn_to_numeric_cast_any = "warn"
+imprecise_flops = "warn"
+invalid_upcast_comparisons = "warn"
+large_digit_groups = "warn"
+manual_is_power_of_two = "warn"
+precedence_bits = "warn"
+suspicious_xor_used_as_pow = "warn"
+
+# API shape.
+default_trait_access = "warn"
+empty_drop = "warn"
+empty_enums = "warn"
+enum_glob_use = "warn"
+expl_impl_clone_on_copy = "warn"
+into_iter_without_iter = "warn"
+iter_not_returning_iterator = "warn"
+iter_without_into_iter = "warn"
+large_stack_arrays = "warn"
+large_stack_frames = "warn"
+large_types_passed_by_value = "warn"
+linkedlist = "warn"
+macro_use_imports = "warn"
+mismatching_type_param_order = "warn"
+pub_without_shorthand = "warn"
+rc_mutex = "warn"
+same_name_method = "warn"
+
+# Expressions.
+debug_assert_with_mut_call = "warn"
+equatable_if_let = "warn"
+explicit_deref_methods = "warn"
+fallible_impl_from = "warn"
+filter_map_next = "warn"
+flat_map_option = "warn"
+fn_params_excessive_bools = "warn"
+ignored_unit_patterns = "warn"
+index_refutable_slice = "warn"
+inefficient_to_string = "warn"
+infallible_try_from = "warn"
+infinite_loop = "warn"
+iter_on_empty_collections = "warn"
+iter_on_single_items = "warn"
+literal_string_with_formatting_args = "warn"
+manual_assert = "warn"
+manual_clamp = "warn"
+manual_ok_or = "warn"
+manual_string_new = "warn"
+map_flatten = "warn"
+match_wild_err_arm = "warn"
+mut_mut = "warn"
+mutex_integer = "warn"
+needless_continue = "warn"
+needless_for_each = "warn"
+needless_raw_string_hashes = "warn"
+negative_feature_names = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+semicolon_inside_block = "warn"
+
+# Style-preference lints muted crate-wide, with the reason.
+# Incremental byte stream construction reads more naturally as
+# `let mut buf = Vec::new(); buf.push(...);` with a comment per byte.
+vec_init_then_push = "allow"
+# Approximate float constants in test data are intentional.
+approx_constant = "allow"
+# A public enum is `#[non_exhaustive]` only where a new variant is genuinely
+# likely, since a caller's fix for the rare break is one match arm. A public
+# struct takes the same rule for a new field, and one holding a private field
+# needs no marking. A workspace-internal crate is never sealed, so a variant
+# or a field added to one is a compile error in the workspace's own tests.
+exhaustive_enums = "allow"
+exhaustive_structs = "allow"
+
+# Allowed today and to be turned on.
+# TODO: let chains make the collapsed form read well.
+collapsible_if = "allow"
+# TODO
+manual_is_multiple_of = "allow"
+# TODO
+same_item_push = "allow"
+# TODO: the default threshold is 7. clippy.toml raises it to 10 for the format
+# code, which has many fields per call site.
+too_many_arguments = "allow"
+
+# Panics and error handling.
+# TODO: each site returns an error or carries an expect with the invariant.
+unwrap_used = "allow"
+# TODO
+expect_used = "allow"
+# TODO
+unwrap_in_result = "allow"
+# TODO
+panic = "allow"
+# TODO
+get_unwrap = "allow"
+# TODO: a slice of a string panics off a character boundary.
+string_slice = "allow"
+# TODO: the `.ok()` rule.
+let_underscore_must_use = "allow"
+# TODO: the determinism rule.
+iter_over_hash_type = "allow"
+# TODO
+checked_conversions = "allow"
+# TODO
+non_zero_suggestions = "allow"
+
+# Lint attributes.
+# TODO: each attribute becomes an `expect` with a reason, or goes.
+allow_attributes = "allow"
+# TODO
+allow_attributes_without_reason = "allow"
+
+# `no_std`.
+# TODO
+std_instead_of_core = "allow"
+# TODO
+std_instead_of_alloc = "allow"
+
+# unsafe.
+# TODO
+multiple_unsafe_ops_per_block = "allow"
+
+# Casts. A widening is `From`, a narrowing is `TryFrom`, and `as` is left for
+# the cast whose loss is the point, marked as such.
+# TODO
+as_conversions = "allow"
+# TODO: more sites on a 32-bit host, which `just portability::cast-gate` denies.
+cast_possible_truncation = "allow"
+# TODO
+cast_possible_wrap = "allow"
+# TODO
+cast_sign_loss = "allow"
+# TODO: each site is a `From` conversion.
+cast_lossless = "allow"
+# TODO
+cast_precision_loss = "allow"
+# TODO: most sites are loop counters. Turned on per file in the
+# byte-level parsers, where every operand comes off the disk, with
+# `#![warn(clippy::arithmetic_side_effects)]`.
+arithmetic_side_effects = "allow"
+
+# API shape.
+# TODO
+unnecessary_wraps = "allow"
+# TODO
+needless_pass_by_value = "allow"
+# TODO
+ref_option = "allow"
+# TODO
+derive_partial_eq_without_eq = "allow"
+# TODO
+missing_fields_in_debug = "allow"
+# TODO: a dropped handle or shape is a bug.
+must_use_candidate = "allow"
+# TODO
+return_self_not_must_use = "allow"
+# TODO: each site becomes `Self`.
+use_self = "allow"
+
+# Documentation.
+# TODO: doc comments with an identifier outside backticks.
+doc_markdown = "allow"
+# TODO: functions without an Errors section.
+missing_errors_doc = "allow"
+# TODO: functions without a Panics section.
+missing_panics_doc = "allow"
+
+# Tests.
+# TODO: assertions on `is_err` or `is_ok`. The exact-error rule.
+assertions_on_result_states = "allow"
+# TODO: assertions without a message.
+missing_assert_message = "allow"
+
+# Expressions.
+# TODO: each import is a `use Trait as _`.
+unused_trait_names = "allow"
+# TODO: functions over 100 lines.
+too_many_lines = "allow"
+# TODO
+manual_let_else = "allow"
+# TODO
+uninlined_format_args = "allow"
+# TODO
+redundant_closure_for_method_calls = "allow"
+# TODO
+explicit_iter_loop = "allow"
+# TODO
+match_same_arms = "allow"
+# TODO: a variant added to a format enum is then a compile
+# error at every match. A match over a `non_exhaustive` enum of another crate
+# keeps its wildcard.
+wildcard_enum_match_arm = "allow"
+# TODO
+shadow_unrelated = "allow"
+# TODO
+str_to_string = "allow"
+# TODO
+items_after_statements = "allow"
+
+[workspace.lints.rustdoc]
+missing_crate_level_docs = "deny"
+private_doc_tests = "deny"
+unescaped_backticks = "deny"
+
+[features]
+default = ["std", "checksum", "deflate"]
+std = []
+checksum = []
+deflate = ["flate2"]
+fast-deflate = ["flate2/zlib-ng"]
+provenance = ["sha2"]
+# Pure-Rust ZFP fixed-rate compression filter (HDF5 filter ID 32013).
+# Supports f32/f64/i32/i64 datasets in 1D–4D.
+zfp = []
+# Ergonomic N-dimensional array I/O via the `ndarray` crate
+# (`DatasetBuilder::with_ndarray`, `Dataset::read_array`/`read_array_dyn`).
+# Requires `std` (it builds on the File/Dataset reader and writer APIs).
+ndarray = ["dep:ndarray", "std"]
+# Serde-based (de)serialization of MATLAB v7.3 .mat files.
+# Requires `std` (uses File/Group/Dataset reader APIs).
+serde = ["dep:serde", "std"]
+# `mat::ComplexElement` `impl`s for `num_complex::Complex<T>`, so the bulk array
+# helpers in `mat::complex` take the de-facto standard Rust complex type
+# directly.
+num-complex = ["dep:num-complex", "serde"]
+# TODO: Refactor into an `insta` snapshot based test
+#
+# check the exact allocation figures of `tests/allocation_baseline.rs`
+# against the numbers committed under `tests/baselines/`. Off by default because
+# those numbers are recorded on one platform: the scaling *rules* in
+# `tests/allocation_bounds.rs` hold everywhere and run in every configuration,
+# while an exact count is a property of one target and one toolchain.
+__heap-baseline = []
+
+[dependencies]
+byteorder = { version = "1", default-features = false }
+flate2 = { version = "1", optional = true, default-features = false, features = ["rust_backend"] }
+ndarray = { version = ">=0.16, <0.18", optional = true }
+num-complex = { version = "0.4", optional = true, default-features = false }
+serde = { version = "1", optional = true, default-features = false, features = ["derive", "alloc"] }
+sha2 = { version = "0.11", optional = true, default-features = false }
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false }
+heapscope = "0.1"
+proptest = "1"
+rstest = "0.27"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+test-util = { path = "crates/test-util" }
+
+[[example]]
+name = "matlab_fixtures"
+required-features = ["serde"]
+
+[[example]]
+name = "ndarray_io"
+required-features = ["ndarray"]
+
+[[bench]]
+name = "hot_paths"
+harness = false
+
+# Style-preference clippy lints muted crate-wide. The remaining clippy
+# surface is still on (`-D warnings` in CI), so genuinely problematic
+# patterns continue to fail the build.
+[lints]
+workspace = true
+
+[profile.dev]
+codegen-units = 32
+debug = "line-tables-only"
+
+[profile.test]
+codegen-units = 32

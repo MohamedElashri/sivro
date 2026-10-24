@@ -12,10 +12,11 @@ fn write_e2e_fixtures() {
 }
 
 /// One file per input family; the GUI runner and hardening tests share them.
-pub(super) const FILES: [&str; 9] = [
+pub(super) const FILES: [&str; 10] = [
     "people.parquet",
     "people.arrow",
     "people.arrows",
+    "people.h5",
     "people.csv",
     "people.tsv",
     "document.json",
@@ -26,6 +27,17 @@ pub(super) const FILES: [&str; 9] = [
 
 pub(super) fn write_all(dir: &Path) {
     std::fs::create_dir_all(dir).unwrap();
+    super::hdf5::write_fixture(&dir.join("people.h5"));
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/hdf5/classic.h5"),
+        dir.join("classic.h5"),
+    )
+    .unwrap();
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/hdf5/layout-v5.h5"),
+        dir.join("layout-v5.h5"),
+    )
+    .unwrap();
     let big = "9007199254740993";
     fixture(
         &dir.join("people.parquet"),

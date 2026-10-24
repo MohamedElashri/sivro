@@ -439,6 +439,7 @@ impl DelimitedAdapter {
         .map_err(parse_error)?;
         fingerprint.check(path)?;
         Ok(DuckDbAdapter {
+            hdf5: None,
             arrow: None,
             format: frozen.format,
             delimited: Some(frozen.options.clone()),
@@ -461,6 +462,7 @@ impl DelimitedAdapter {
                     copy: true,
                     exports: vec![
                         "parquet".into(),
+                        "hdf5".into(),
                         "arrow".into(),
                         "arrow_stream".into(),
                         "csv".into(),

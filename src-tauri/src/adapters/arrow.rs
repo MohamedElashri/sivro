@@ -261,6 +261,7 @@ pub fn open(
     fingerprint.check(path)?;
     deadline(started, policy)?;
     Ok(DuckDbAdapter {
+        hdf5: None,
         arrow: Some(ArrowInfo {
             encoding: if is_file { "file" } else { "stream" }.into(),
             metadata: original
@@ -304,6 +305,7 @@ pub fn open(
                 copy: true,
                 exports: vec![
                     "parquet".into(),
+                    "hdf5".into(),
                     "arrow".into(),
                     "arrow_stream".into(),
                     "csv".into(),

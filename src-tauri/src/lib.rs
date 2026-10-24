@@ -307,6 +307,7 @@ pub fn run() {
             discard_preview,
             inspect_workbook,
             inspect_database,
+            inspect_hdf5,
             open_dataset,
             list_objects,
             select_object,

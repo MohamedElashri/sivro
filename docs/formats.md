@@ -1,7 +1,7 @@
 # Formats and behaviour
 
 Sivro reads Parquet (`.parquet`, `.pq`), Arrow IPC / Feather V2
-(`.arrow`, `.ipc`, `.feather`, `.arrows`), CSV (`.csv`), TSV (`.tsv`), JSON
+(`.arrow`, `.ipc`, `.feather`, `.arrows`), HDF5 (`.h5`, `.hdf5`, `.hdf`), CSV (`.csv`), TSV (`.tsv`), JSON
 (`.json`), JSON Lines (`.jsonl`, `.ndjson`), Excel (`.xlsx`, `.xlsm`, `.xlsb`,
 `.xls`) and SQLite (`.sqlite`, `.sqlite3`, `.db`). It never modifies a source.
 Release limitations are summarized in the [changelog](../CHANGELOG.md).
@@ -11,7 +11,7 @@ Release limitations are summarized in the [changelog](../CHANGELOG.md).
 Every format shares one workflow: multiple tabs, recent files, drag/drop,
 schema and row-group details, a paged grid, search, filters, sorting, column
 profiles, nested row inspection, copying and a 1,500-row sample generator.
-Exports support Parquet, Arrow IPC files/streams, CSV, TSV, **JSON arrays** and
+Exports support Parquet, Arrow IPC files/streams, HDF5, CSV, TSV, **JSON arrays** and
 **JSON Lines**. Queries use backend-owned sessions and column IDs; exact numbers
 travel as tagged text. The first page uses the Parquet metadata count for an
 unfiltered view. Filtered views offer **Count rows** on demand, while profiles
@@ -53,6 +53,38 @@ binary and NaN/Infinity. Original metadata, dictionaries, extensions and timezon
 labels are not retained. Wide integers must fit `DECIMAL(38,0)`; exact JSON-number
 columns are rejected, and nested JSON becomes text. Mixed SQLite columns follow
 Parquet's homogeneous-type and exact-integer checks.
+
+## HDF5
+
+Choose a dataset in the group browser, then select row/column axes, fixed
+indices and an optional row window. Compound fields become columns; equally
+sized 1D datasets can open as a column group. **Dataset:** reopens the picker;
+Refresh retains the selection. Scalars have one row; empty/null dataspaces have none.
+
+| Supported | Behaviour |
+| --- | --- |
+| Layout v3/v4/v5 | Compact, contiguous and all five modern chunk indexes; user blocks |
+| Filters | Deflate, shuffle, Fletcher32, N-bit, scale-offset and LZF |
+| Values | Exact integers through 128 bits; Float16/32/64; UTF-8; enums; nested/variable-length values |
+| Metadata | Attributes, types, shapes, chunks and filters |
+
+Nested values use exact JSON; opaque/reference/time/nonstandard float values
+remain bytes. Soft/external links, external/virtual storage and external filter
+plugins are unsupported. Application-specific pandas/PyTables/MATLAB objects
+are not reconstructed. Reading uses pure Rust and never modifies the source.
+
+Limits: 4 GiB input, 64 MiB per read/chunk/leading row, 8 MiB metadata,
+4,096 objects/columns, rank 32, 2 million cells and 1 million B-tree chunks.
+Large inner planes
+may exceed these limits even for a small slice; decoded values also share the
+scratch and opening-time budgets.
+
+Exports write `/table/col-NNNN` datasets and `/_sivro_validity` masks (0 NULL,
+1 present). Attributes preserve names, logical types and reversible encodings
+for decimal/temporal/JSON/binary/NUL text. Reopen `/table` as columns; other tools
+must apply those annotations. Exports preserve the selected view, not the source
+hierarchy, and have 64 MiB cell/encoded buffers. Mixed SQLite storage classes
+or wide integers mixed with reals fail explicitly.
 
 ## CSV and TSV
 

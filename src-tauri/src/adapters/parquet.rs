@@ -128,10 +128,11 @@ impl ParquetAdapter {
         conn.execute_batch(&format!("CREATE TEMP VIEW {} AS SELECT {projection}, row_number() OVER () - 1 AS {} FROM {source}", sql::VIEW, sql::ORDINAL)).map_err(AppError::query)?;
         fingerprint.check(path)?;
         let object = ObjectDescriptor { id: object_id, label: "Data".into(), kind: ObjectKind::Table, columns,
-            row_count: CountState::known(row_count), capabilities: Capabilities { page: true, filter: true, sort: true, profile: true, exact_count: true, copy: true, exports: vec!["parquet".into(), "arrow".into(), "arrow_stream".into(), "csv".into(), "tsv".into(), "json".into(), "jsonl".into()] },
+            row_count: CountState::known(row_count), capabilities: Capabilities { page: true, filter: true, sort: true, profile: true, exact_count: true, copy: true, exports: vec!["parquet".into(), "arrow".into(), "arrow_stream".into(), "hdf5".into(), "csv".into(), "tsv".into(), "json".into(), "jsonl".into()] },
             warnings: vec!["Paging uses a source ordinal from a single-threaded, insertion-order scan; refreshing invalidates all row identities.".into(), "Structured comparisons are limited to text matching and NULL checks to avoid lossy JSON numeric casts.".into()] };
         Ok(DuckDbAdapter {
             arrow: None,
+            hdf5: None,
             format: FormatKind::Parquet,
             delimited: None,
             excel: None,

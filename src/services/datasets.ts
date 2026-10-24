@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppError, DatasetInfo, ScopedResult, QueryArgs, PageResult, CountResult, ColumnProfile, RowResult, ExportResult, ExportFormat, DelimitedOptions, DelimitedPreview, DocumentResult, FormatKind, ExcelOptions, WorkbookInfo, DatabaseInfo } from "../types";
+import type { AppError, DatasetInfo, ScopedResult, QueryArgs, PageResult, CountResult, ColumnProfile, RowResult, ExportResult, ExportFormat, DelimitedOptions, DelimitedPreview, DocumentResult, FormatKind, ExcelOptions, WorkbookInfo, DatabaseInfo, Hdf5Options, Hdf5Info } from "../types";
 
 export function errorInfo(error: unknown): AppError {
   if (error && typeof error === "object" && "message" in error) {
@@ -64,7 +64,8 @@ export class DatasetOperation<T> {
 export const datasets = {
   // `format` is only an explicit JSON <-> JSON Lines reopen after a mismatch;
   // `excel` carries the chosen worksheet and header row.
-  open: (path: string, openOptions: { previewToken?: string; format?: FormatKind; excel?: ExcelOptions; sqlite?: { object: string } } = {}) => invoke<DatasetInfo>("open_dataset", { path, openOptions }),
+  open: (path: string, openOptions: { previewToken?: string; format?: FormatKind; excel?: ExcelOptions; sqlite?: { object: string }; hdf5?: Hdf5Options } = {}) => invoke<DatasetInfo>("open_dataset", { path, openOptions }),
+  inspectHdf5: (path: string, group: string) => invoke<Hdf5Info>("inspect_hdf5", { path, group }),
   inspectWorkbook: (path: string) => invoke<WorkbookInfo>("inspect_workbook", { path }),
   inspectDatabase: (path: string) => invoke<DatabaseInfo>("inspect_database", { path }),
   preview: (path: string, options: DelimitedOptions) => invoke<DelimitedPreview>("preview_delimited", { path, options }),

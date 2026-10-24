@@ -8,7 +8,8 @@
 // Requires a `tauri build` binary (plain `cargo build` produces a dev-mode
 // binary that expects the Vite dev server), `tauri-driver` on PATH or in
 // ~/.cargo/bin, and WebKitWebDriver (Debian/Ubuntu: webkit2gtk-driver).
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import { startProcess } from "./process.mjs";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -26,8 +27,10 @@ const base = `http://127.0.0.1:${port}`;
 // --offline: prepare fixtures normally, then rerun inside a user + network
 // namespace whose only interface is loopback (for WebDriver).
 if (args.includes("--offline")) {
-  execFileSync("node", ["scripts/with-duckdb.mjs", "cargo", "test", "--quiet", "--manifest-path", "src-tauri/Cargo.toml", "--lib", "write_e2e_fixtures", "--", "--ignored"],
-    { cwd: root, env: { ...process.env, SIVRO_E2E_DIR: fixtures }, stdio: ["ignore", "ignore", "inherit"] });
+  if (!option("--fixtures")) {
+    execFileSync("node", ["scripts/with-duckdb.mjs", "cargo", "test", "--quiet", "--manifest-path", "src-tauri/Cargo.toml", "--lib", "write_e2e_fixtures", "--", "--ignored"],
+      { cwd: root, env: { ...process.env, SIVRO_E2E_DIR: fixtures }, stdio: ["ignore", "ignore", "inherit"] });
+  }
   const inner = ["node", JSON.stringify(new URL(import.meta.url).pathname), "--fixtures", JSON.stringify(fixtures), "--bin", JSON.stringify(bin), "--offline-check"].join(" ");
   const check = "(timeout 3 sh -c 'getent hosts example.com' >/dev/null && echo 'network reachable' && exit 1) || true";
   execFileSync("unshare", ["-rn", "sh", "-c", `ip link set lo up && ${check} && echo 'offline namespace: loopback only, no DNS' && ${inner}`], { stdio: "inherit" });
@@ -45,12 +48,13 @@ const profile = Object.fromEntries(["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CAC
   const dir = join(work, k.toLowerCase()); mkdirSync(dir); return [k, dir];
 }));
 const driverBin = [join(homedir(), ".cargo/bin/tauri-driver"), "tauri-driver"].find((p) => p === "tauri-driver" || existsSync(p));
-const driver = spawn(driverBin, ["--port", String(port)], { env: { ...process.env, ...profile }, stdio: ["ignore", "ignore", "pipe"] });
+const { child: driver, stop: stopDriver } = startProcess(driverBin, ["--port", String(port)], { env: { ...process.env, ...profile }, stdio: ["ignore", "ignore", "pipe"] });
 let driverLog = ""; driver.stderr.on("data", (d) => { driverLog += d; });
+driver.on("error", error => { driverLog += error.message; });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function wd(method, path, body) {
-  const response = await fetch(base + path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const response = await fetch(base + path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
   const json = await response.json();
   if (json.value?.error) throw new Error(`${method} ${path}: ${json.value.error}: ${json.value.message}`);
   return json.value;
@@ -85,6 +89,9 @@ async function chooseTheme(value) {
 }
 
 const cases = [
+  { file: "people.h5", dialog: "confirm-hdf5", expect: ["9007199254740993", "Alice"] },
+  { file: "classic.h5", dialog: "confirm-hdf5", group: "/arrays", dataset: "/arrays/cube", slice: true, expect: ["9007199254741007", "9007199254741015"] },
+  { file: "layout-v5.h5", dialog: "confirm-hdf5", group: "/filtered", dataset: "/filtered/btree", slice: true, expect: ["9007199254741001", "9007199254741008"] },
   { file: "people.arrow", expect: ["9007199254740993", "Alice"] },
   { file: "people.arrows", expect: ["9007199254740993", "Alice"] },
   { file: "people.parquet", expect: ["9007199254740993", "Alice"] },
@@ -99,7 +106,7 @@ const cases = [
 const results = [];
 let failure = null;
 try {
-  await waitFor("tauri-driver", () => fetch(`${base}/status`).then((r) => r.ok), 15_000);
+  await waitFor("tauri-driver", () => fetch(`${base}/status`, { signal: AbortSignal.timeout(2000) }).then((r) => r.ok), 15_000);
   sid = (await wd("POST", "/session", { capabilities: { alwaysMatch: { "tauri:options": { application: bin } } } })).sessionId;
   await waitFor("start screen", present(".hero"));
   await chooseTheme("dark");
@@ -140,15 +147,34 @@ try {
     await click('#about-close'); await chooseTheme("light");
   }
   results.push({ file: "About", ms: 0, steps: ["version", "author", "links", "manual updates", "focus restored"] });
-  const paths = cases.map((c) => join(fixtures, c.file));
+  const paths = cases.slice(0, 10).map((c) => join(fixtures, c.file));
   await exec("localStorage.setItem('sivro-recents', JSON.stringify(arguments[0])); location.reload();", paths);
   await waitFor("recent files", () => exec("return document.querySelectorAll('.recent-item').length === arguments[0]", paths.length));
   for (const test of cases) {
     const started = Date.now(), steps = [];
     const path = join(fixtures, test.file);
     try {
-      await click(`.recent-item[data-path="${attr(path)}"]`); steps.push("open");
+      const recent = `.recent-item[data-path="${attr(path)}"]`;
+      if (!(await present(recent)())) {
+        await exec("localStorage.setItem('sivro-recents', JSON.stringify([arguments[0]])); location.reload();", path);
+        await waitFor(`${test.file} recent entry`, present(recent));
+      }
+      await click(recent); steps.push("open");
       if (test.dialog) {
+        if (test.slice) {
+          await waitFor("HDF5 groups", present(`[data-action="browse-hdf5"][data-group="${test.group}"]`));
+          await click(`[data-action="browse-hdf5"][data-group="${test.group}"]`);
+          await waitFor("HDF5 cube", present(`[data-hdf5="object"][value="${test.dataset}"]:not([disabled])`));
+          await click(`[data-hdf5="object"][value="${test.dataset}"]`);
+          for (const [field, value] of [["index", "2"], ["rowStart", "1"], ["rowLimit", "1"]]) {
+            await exec("const input=document.querySelector('[data-hdf5=\"'+arguments[0]+'\"]'); if(input) { input.value=arguments[1]; input.dispatchEvent(new Event('input',{bubbles:true})); }", field, value);
+          }
+          steps.push("browse group", "slice cube");
+          if (args.includes("--keep")) {
+            const shot = await wd("GET", `/session/${sid}/screenshot`);
+            writeFileSync(join(work, `hdf5-picker-${test.file}.png`), Buffer.from(shot, "base64"));
+          }
+        }
         await waitFor(`${test.file} dialog`, present(`[data-action="${test.dialog}"]:not([disabled])`));
         await click(`[data-action="${test.dialog}"]`); steps.push("confirm dialog");
       }
@@ -225,9 +251,7 @@ try {
   }
 } finally {
   if (sid) await wd("DELETE", `/session/${sid}`).catch(() => undefined);
-  const exited = new Promise((done) => driver.once("exit", done));
-  driver.kill();
-  await Promise.race([exited, sleep(5000)]);
+  await stopDriver();
 }
 
 for (const r of results) console.log(`✔ ${r.file.padEnd(16)} ${String(r.ms).padStart(6)} ms  ${r.steps.join(" → ")}`);
@@ -239,4 +263,4 @@ if (failure) {
 // The app may still flush its profile while exiting; retry the cleanup.
 if (args.includes("--keep")) console.log(`kept fixtures and profile: ${work}`);
 else rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-console.log(`GUI end-to-end: ${cases.length} formats passed with ${bin}`);
+console.log(`GUI end-to-end: ${cases.length} input cases passed with ${bin}`);

@@ -2,7 +2,7 @@
 name = "sivro"
 # Generated from package.json by `npm run version:sync`.
 version = "0.1.1"
-description = "Local, read-only desktop explorer for Parquet, CSV, TSV, JSON, JSON Lines, Arrow, Excel and SQLite"
+description = "Local, read-only desktop explorer for Parquet, CSV, TSV, JSON, JSON Lines, Arrow, HDF5, Excel and SQLite"
 authors = ["Mohamed Elashri <git@elashri.com>"]
 edition = "2021"
 rust-version = "1.90"
@@ -24,6 +24,8 @@ tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 same-file = "1"
+# Pure Rust HDF5 parsing/writing; no system HDF5 or runtime plugins.
+hdf5-pure = { version = "=0.47.0", path = "vendor/hdf5-pure" }
 # Filesystem free-space checks and cross-platform scratch-directory leases.
 fs2 = "=0.4.3"
 # No `bundled` by default: local + CI builds link prebuilt DuckDB static

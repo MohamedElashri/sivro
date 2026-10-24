@@ -1,4 +1,4 @@
-export type FormatKind = "parquet" | "arrow" | "csv" | "tsv" | "json" | "jsonl" | "excel" | "sqlite";
+export type FormatKind = "parquet" | "hdf5" | "arrow" | "csv" | "tsv" | "json" | "jsonl" | "excel" | "sqlite";
 export type ColumnKind = "number" | "text" | "bool" | "date" | "nested" | "binary" | "other";
 export type FilterOp = "eq" | "ne" | "gt" | "lt" | "gte" | "lte" | "contains" | "not_contains" | "contains_any" | "not_contains_any" | "starts_with" | "ends_with" | "is_null" | "is_not_null";
 // `sortable` is false for raw JSON tokens/values, whose text order is not value order.
@@ -16,6 +16,7 @@ export interface ResourcePolicy {
   defaultPageSize: number; maxPageSize: number; schemaSampleRows: number;
   jsonDocumentBytes: number; jsonDepth: number; jsonChildren: number; jsonlRecordBytes: number;
   cellPreviewBytes: number; fullCellBytes: number; blobPreviewBytes: number;
+  hdf5FileBytes: number; hdf5ReadBytes: number; hdf5Cells: number;
   arrowFileBytes: number; arrowBatchBytes: number;
   excelWorkbookBytes: number; xlsWorkbookBytes: number; excelPayloadBytes: number; excelEntryBytes: number; excelCells: number;
   scratchBytes: number; duckdbMemoryBytes: number; expensiveOperations: number; timeoutMs: number;
@@ -31,6 +32,7 @@ export interface DatasetInfo {
   document?: DocumentInfo | null;
   excel?: ExcelSelection | null;
   sqlite?: SqliteSelection | null;
+  hdf5?: { options: Hdf5Options; info: Hdf5Info } | null;
   arrow?: { encoding: "file" | "stream"; metadata: Record<string, string>; fields: { name: string; dataType: string; nullable: boolean; metadata: Record<string, string> }[] } | null;
 }
 export interface DbObjectInfo { name: string; kind: "table" | "view" | "virtual"; columns: number; withoutRowid: boolean; selectable: boolean; reason: string | null }
@@ -55,7 +57,7 @@ export interface PageResult extends ScopedResult { columnIds: string[]; rowIds: 
 export interface CountResult extends ScopedResult { count: CountState }
 export interface ColumnProfile extends ScopedResult { columnId: string; scope: "current_view"; nullCount: string; nonNullCount: string; distinctCount: string; min: Cell; max: Cell; topValues: { value: Cell; count: string }[]; warnings?: string[] }
 export interface RowResult extends ScopedResult { rowId: string; columnIds: string[]; cells: Cell[]; rawRecord?: string | null }
-export type ExportFormat = "arrow" | "arrow_stream" | "csv" | "tsv" | "json" | "jsonl" | "parquet";
+export type ExportFormat = "hdf5" | "arrow" | "arrow_stream" | "csv" | "tsv" | "json" | "jsonl" | "parquet";
 export interface ExportResult extends ScopedResult { destination: string; exportedRows: string; truncated: boolean; warnings: string[] }
 export interface AppError { code: string; message: string }
 
@@ -70,3 +72,8 @@ export interface DelimitedPreview {
   token: string; format: "csv" | "tsv"; options: FrozenDelimitedOptions;
   columns: ColumnInfo[]; rows: Cell[][]; sampledRows: number; hasMore: boolean; warnings: string[];
 }
+
+export interface Hdf5Options { object: string; columns: boolean; rowAxis: number; columnAxis: number | null; indices: string[]; rowStart: string; rowLimit: number | null }
+export interface Hdf5Attribute { name: string; dataType: string; value: string | null }
+export interface Hdf5Object { path: string; name: string; kind: "group" | "dataset" | "datatype"; shape: string[]; dataType: string; layout: string; chunkShape: string[] | null; filters: number[]; attributes: Hdf5Attribute[]; selectable: boolean; reason: string | null }
+export interface Hdf5Info { group: string; attributes: Hdf5Attribute[]; objects: Hdf5Object[]; columnsSelectable: boolean; warnings: string[] }
