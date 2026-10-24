@@ -97,10 +97,14 @@ jobs:
         if: steps.webdriver-cache.outputs.cache-hit != 'true'
         run: cargo install tauri-driver --version 2.1.0 --locked
       - run: make app-debug
-      - run: xvfb-run -a node tests/e2e/run.mjs --fixtures "$SIVRO_E2E_DIR"
+      - name: GUI online
+        timeout-minutes: 3
+        run: xvfb-run -a node tests/e2e/run.mjs --fixtures "$SIVRO_E2E_DIR"
       # Ubuntu 24.04 restricts the offline test's unprivileged network namespace.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: xvfb-run -a node tests/e2e/run.mjs --offline --fixtures "$SIVRO_E2E_DIR"
+      - name: GUI offline
+        timeout-minutes: 3
+        run: xvfb-run -a node tests/e2e/run.mjs --offline --fixtures "$SIVRO_E2E_DIR"
 
   platforms:
     name: Backend tests on ${{ matrix.name }}

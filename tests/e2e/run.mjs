@@ -8,7 +8,8 @@
 // Requires a `tauri build` binary (plain `cargo build` produces a dev-mode
 // binary that expects the Vite dev server), `tauri-driver` on PATH or in
 // ~/.cargo/bin, and WebKitWebDriver (Debian/Ubuntu: webkit2gtk-driver).
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import { startProcess } from "./process.mjs";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -47,12 +48,13 @@ const profile = Object.fromEntries(["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CAC
   const dir = join(work, k.toLowerCase()); mkdirSync(dir); return [k, dir];
 }));
 const driverBin = [join(homedir(), ".cargo/bin/tauri-driver"), "tauri-driver"].find((p) => p === "tauri-driver" || existsSync(p));
-const driver = spawn(driverBin, ["--port", String(port)], { env: { ...process.env, ...profile }, stdio: ["ignore", "ignore", "pipe"] });
+const { child: driver, stop: stopDriver } = startProcess(driverBin, ["--port", String(port)], { env: { ...process.env, ...profile }, stdio: ["ignore", "ignore", "pipe"] });
 let driverLog = ""; driver.stderr.on("data", (d) => { driverLog += d; });
+driver.on("error", error => { driverLog += error.message; });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function wd(method, path, body) {
-  const response = await fetch(base + path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const response = await fetch(base + path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
   const json = await response.json();
   if (json.value?.error) throw new Error(`${method} ${path}: ${json.value.error}: ${json.value.message}`);
   return json.value;
@@ -102,7 +104,7 @@ const cases = [
 const results = [];
 let failure = null;
 try {
-  await waitFor("tauri-driver", () => fetch(`${base}/status`).then((r) => r.ok), 15_000);
+  await waitFor("tauri-driver", () => fetch(`${base}/status`, { signal: AbortSignal.timeout(2000) }).then((r) => r.ok), 15_000);
   sid = (await wd("POST", "/session", { capabilities: { alwaysMatch: { "tauri:options": { application: bin } } } })).sessionId;
   await waitFor("start screen", present(".hero"));
   await chooseTheme("dark");
@@ -225,9 +227,7 @@ try {
   }
 } finally {
   if (sid) await wd("DELETE", `/session/${sid}`).catch(() => undefined);
-  const exited = new Promise((done) => driver.once("exit", done));
-  driver.kill();
-  await Promise.race([exited, sleep(5000)]);
+  await stopDriver();
 }
 
 for (const r of results) console.log(`✔ ${r.file.padEnd(16)} ${String(r.ms).padStart(6)} ms  ${r.steps.join(" → ")}`);

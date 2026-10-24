@@ -11,7 +11,7 @@
     "prebuild": "npm run version:check",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test:frontend": "node --test tests/frontend.test.mjs tests/updates.test.mjs tests/release.test.mjs tests/appearance.test.mjs",
+    "test:frontend": "node --test tests/frontend.test.mjs tests/updates.test.mjs tests/release.test.mjs tests/appearance.test.mjs tests/e2e-process.test.mjs",
     "test:e2e": "node tests/e2e/run.mjs",
     "test:e2e:offline": "node tests/e2e/run.mjs --offline",
     "tauri": "node scripts/with-duckdb.mjs tauri",
