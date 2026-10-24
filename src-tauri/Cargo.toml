@@ -1,7 +1,7 @@
 [package]
 name = "sivro"
 # Generated from package.json by `npm run version:sync`.
-version = "0.1.1"
+version = "0.1.2"
 description = "Local, read-only desktop explorer for Parquet, CSV, TSV, JSON, JSON Lines, Arrow, HDF5, Excel and SQLite"
 authors = ["Mohamed Elashri <git@elashri.com>"]
 edition = "2021"

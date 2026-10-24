@@ -2,10 +2,13 @@
 
 ## Unreleased
 
+## 0.1.2
+
 - Added HDF5 browsing, attributes, multidimensional slices and exact-value exports.
-  Supports layout v3/v4/v5; see [format limits](docs/formats.md#hdf5).
+  Supports layout v3/v4/v5; see [format limits](https://github.com/MohamedElashri/sivro/blob/v0.1.2/docs/formats.md#hdf5).
 - Added Arrow IPC file/stream and Feather V2 input and export, with LZ4/ZSTD
-  reading and exact values. See [format limits](docs/formats.md#arrow-ipc-and-feather-v2).
+  reading and exact values. See [format limits](https://github.com/MohamedElashri/sivro/blob/v0.1.2/docs/formats.md#arrow-ipc-and-feather-v2).
+- Shortened documentation and improved CI caching and desktop-test cleanup.
 
 ## 0.1.1
 

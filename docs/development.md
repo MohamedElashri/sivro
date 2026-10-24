@@ -2,129 +2,83 @@
 
 ## Setup
 
-You need Node.js 24, GNU Make, a C compiler and the latest stable Rust with
-`rustfmt` and `clippy` (CI lints with the latest stable), plus the
-[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). On
-Debian/Ubuntu:
+Use Node.js 24, GNU Make and stable Rust with `rustfmt` and `clippy`.
+Install the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+On Debian/Ubuntu:
 
 ```sh
 sudo apt-get install build-essential file libayatana-appindicator3-dev \
   libgtk-3-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev librsvg2-dev \
   patchelf unzip xdg-utils
-rustup update stable && rustup component add rustfmt clippy
+rustup update stable
+rustup component add rustfmt clippy
 make dev
 ```
 
-If Homebrew's `pkg-config` shadows the system one, set
-`PKG_CONFIG=/usr/bin/pkg-config`. The first build downloads dependencies and
-DuckDB archives; later builds work offline.
+The first build downloads dependencies and DuckDB archives. Linux and macOS
+use prebuilt DuckDB libraries; Windows builds them with `source-bundled`,
+which Make enables automatically. On Linux, use
+`PKG_CONFIG=/usr/bin/pkg-config` if Homebrew masks the system libraries.
 
-## Make targets
+## Commands
 
-CI runs formatting/frontend checks first, then Clippy, backend and GUI tests
-on one Linux runner. Cargo, DuckDB and WebDriver caches are reused; GUI tests
-use `make app-debug`, while releases still test the release binary.
-`make help` lists all targets.
+| Command | Purpose |
+| --- | --- |
+| `make dev` | Start development mode |
+| `make check` | Typecheck frontend and backend |
+| `make fmt` / `make lint` | Format Rust / run Clippy |
+| `make test` / `make test-libs` | Run application / library tests |
+| `make ci` | Run formatting, lint and all non-GUI tests |
+| `make build` | Build signed release packages |
+| `make app` / `make app-debug` | Build an unbundled release / debug app |
+| `make perf` | Measure the performance baseline |
 
-| Target | Does |
-|---|---|
-| `make dev` | Run the app with hot reload |
-| `make build` / `make app` | Release packages / release binary only |
-| `make check` | Typecheck the frontend and Rust code |
-| `make fmt` / `make fmt-check` | Format Rust code / check formatting |
-| `make lint` | Clippy on all crates, warnings denied |
-| `make test` | Frontend and backend tests |
-| `make test-libs` | Library checks (`experiments/library-checks`) |
-| `make test-e2e` / `make test-e2e-offline` | GUI suite against `make app` (Linux) |
-| `make ci` | `fmt-check`, `lint`, `test` and `test-libs` |
-| `make perf` | 1M-row performance baseline |
-| `make clean` / `make distclean` | Remove build outputs / also dependencies and DuckDB archives |
+Use `make help` for all targets. To run the Linux desktop suite:
 
-## Architecture
+```sh
+make app-debug
+SIVRO_BIN="$PWD/src-tauri/target/debug/sivro" make test-e2e test-e2e-offline
+```
 
-A Tauri 2 app: a Rust backend in `src-tauri/src` and a vanilla
-TypeScript/Vite frontend in `src`.
+GUI tests require `tauri-driver` and `webkit2gtk-driver`; headless runs also
+need `xvfb` and `xauth`. Use `xvfb-run -a` when headless. Ubuntu 24.04's offline
+test may require `kernel.apparmor_restrict_unprivileged_userns=0`.
 
-- **Sessions** (`sessions.rs`): each open file owns its fingerprint, frozen
-  options and schema, a generation number, one serialized execution lane and
-  a scratch directory. At most two expensive operations run at once; a 30 s
-  budget interrupts native work, and refresh or close invalidates the
-  generation so late replies are dropped.
-- **Readers** (`adapters/`): tabular readers share the DuckDB `TableSource`
-  interface. Arrow uses its native bridge; HDF5 stages bounded selections with
-  a patched `hdf5-pure` ([vendor notes](../src-tauri/vendor/hdf5-pure/PATCHES.md)).
-  JSON documents use a bounded tree; SQLite uses a read-only rusqlite connection.
-- **Queries** (`query/`): the frontend sends typed filters, column IDs, sorts
-  and paging, never SQL. Rust compiles them with allow-listed identifiers and
-  bound values, separately for DuckDB and SQLite.
-- **Exact values:** cells are tagged, and integers and decimals cross IPC as
-  text. JSON keeps raw serde_json tokens (`arbitrary_precision`).
-- **Exports** (`export.rs`) are staged beside the destination and published
-  with a no-clobber hard link; sources and their aliases are refused.
-- **Limits** live in `policy.rs`: page sizes, 1 GiB scratch per session,
-  512 MiB DuckDB memory, 200,000 Excel cells, 32 MiB JSON documents and a
-  10,000,000-row export cap.
-- **Offline:** fonts are bundled, the CSP allows only the app and Tauri IPC,
-  DuckDB auto-install is off, and on Linux bundled SQLite/DuckDB symbols stay
-  private (`-Wl,--exclude-libs,ALL`). Only the native updater makes network
-  requests, after an explicit user action; opening About reads local metadata.
-- **Updates** (`src/updates.ts`): a state machine separates checking,
-  confirmation, download/signature verification, installation and restart.
-  Check and download timeouts are 20 seconds and 5 minutes respectively.
-  Tauri's updater verifies signatures and requires the signed version to
-  match the manifest; downgrades are disabled. Release notes are rendered as
-  escaped text. No network access is added to the WebView CSP.
+## Code layout
 
-DuckDB is engine 1.5.6 (`libduckdb-sys` 1.10506.0). `scripts/with-duckdb.mjs`
-stages the official static archives on Linux and macOS
-(`DUCKDB_TRIPLE=universal-apple-darwin` merges both macOS architectures).
-Windows MSVC compiles DuckDB from source with `--features source-bundled`,
-which the Makefile adds automatically.
+The app uses Tauri 2, a Rust backend and a TypeScript/Vite frontend.
 
-## Tests
+| Location | Responsibility |
+| --- | --- |
+| `src-tauri/src/adapters/` | Readers and table adapters |
+| `src-tauri/src/sessions.rs` | Sessions, cancellation and source-change detection |
+| `src-tauri/src/query/` | Typed filters and parameterized queries |
+| `src-tauri/src/export.rs` | Staged exports with no-overwrite publication |
+| `src-tauri/src/policy.rs` | Resource limits |
+| `src/` | Grid, dialogs, appearance and updater UI |
 
-- **Appearance** (`tests/appearance.test.mjs`): persistence, live system-theme
-  changes, storage failure recovery and WCAG AA text contrast in both themes.
-  The GUI suite also checks theme restoration, dropdown keyboard highlights,
-  About focus and pending-view tab indicators.
-- **Frontend** (`tests/frontend.test.mjs`): mocked IPC, stale replies,
-  dialogs, filters and exports.
-- **Backend** (`src-tauri/src/tests`): every reader end to end, eight-format
-  export round trips, precision fixtures, hostile inputs, resource limits,
-  cancellation, refresh and read-only guarantees.
-- **Library checks:** isolated checks of the DuckDB, Calamine and rusqlite
-  behaviour the readers rely on.
-- **GUI** (`tests/e2e/run.mjs`): the built app through `tauri-driver` and
-  `WebKitWebDriver` (`webkit2gtk-driver`), one file per format (both Arrow IPC files and streams), online and
-  inside a loopback-only network namespace. Use `xvfb-run -a` when headless;
-  Ubuntu 24.04 needs `kernel.apparmor_restrict_unprivileged_userns=0` for the
-  offline run.
+Numbers cross IPC as tagged text to preserve precision. File operations are
+local; update checks require user action. HDF5 uses a patched pure Rust reader;
+see its [vendor notes](../src-tauri/vendor/hdf5-pure/PATCHES.md).
 
-HDF5 interoperability fixtures cover v3/v4/v5 and all modern chunk indexes.
-Run the ignored `write_hdf5_interop_export` test with `SIVRO_HDF5_EXPORT=PATH`,
-then `uv run --with h5py tests/fixtures/hdf5/verify_exports.py PATH`.
+## Tests and CI
 
-Fixtures are synthetic. On a Ryzen 7 7735H, 1M-row sources open in 14 ms
-(Parquet), ~200 ms (CSV/TSV) and ~5–6 s (JSON/JSONL, which are staged), with
-peak memory under 350 MiB.
+CI checks formatting and the frontend first, then runs Clippy, backend tests
+and online/offline GUI tests on one Linux runner. Cargo, DuckDB and WebDriver
+are cached. Release builds test the packaged version on supported targets.
+
+Frontend tests cover IPC and UI behaviour; backend tests cover readers,
+precision, exports, cancellation and resource limits. Desktop tests exercise
+the real app. Synthetic interoperability fixtures live in `tests/fixtures/`.
 
 ## Releasing
 
-1. `package.json` is the only version source. Run
-   `npm version X.Y.Z --no-git-tag-version` to set it; the version lifecycle
-   hook runs `npm run version:sync` to update Cargo and lockfile metadata.
-   If editing `package.json` directly, run `npm run version:sync` afterward.
-   Tauri reads `../package.json` directly using its
-   [version-file support](https://v2.tauri.app/reference/config/#version).
-   Commit the generated metadata;
-   do not edit its versions by hand. Update `CHANGELOG.md` under a `## X.Y.Z`
-   heading; that section supplies the GitHub release notes.
-   `npm run version:check` checks metadata without changing files. Frontend
-   builds run it automatically, and release CI additionally requires the tag
-   to equal `vX.Y.Z` before creating a draft or building packages.
-2. Run `make ci build app test-e2e test-e2e-offline`.
-3. Commit the version and changelog as `chore: Release vX.Y.Z`, tag it, and
-   push both together:
+1. From current `main`, run `npm version X.Y.Z --no-git-tag-version`.
+   This synchronizes Cargo and npm metadata from `package.json`.
+2. Add a concise `## X.Y.Z` section to `CHANGELOG.md`; it supplies release notes.
+   Validate with `RELEASE_TAG=vX.Y.Z npm run version:check` and run
+   `make ci build app test-e2e test-e2e-offline`.
+3. Commit the release files, then tag and push together:
 
    ```sh
    git commit -am "chore: Release vX.Y.Z"
@@ -132,31 +86,19 @@ peak memory under 350 MiB.
    git push --atomic origin main vX.Y.Z
    ```
 
-   `ci.yml` skips pushes whose head commit starts with `chore: Release v`,
-   since the release workflow runs every check on the tagged commit. Use that
-   prefix only for release commits, and push other unpushed commits first so
-   CI still checks them. Do not use `[skip ci]`; it can also skip the tag's
-   release workflow.
-
-   `release.yml` creates a draft release, runs the backend tests on every target, builds Linux x86_64, Windows x86_64 and a
-   universal macOS app (ARM64 Linux/Windows are experimental), runs the GUI
-   suite on Linux, assembles and validates `latest.json`, attaches
-   `SHA256SUMS.txt` and publishes from the `release`
-   environment. Add required reviewers to that environment to hold
-   publication for manual macOS and Windows checks.
+The release commit prefix skips duplicate main-branch CI; the tag starts the
+release workflow. Use it only for release commits and do not use `[skip ci]`.
+The workflow creates a draft, tests and builds platform packages, validates
+signatures and `latest.json`, adds `SHA256SUMS.txt`, then publishes through the
+`release` environment. Required reviewers can hold publication for manual checks.
+Published versions are immutable; corrections require a new version.
 
 ### Updater signing
 
-The 0.1.1 signing key was generated locally in the ignored
-`.secrets/sivro-updater.key`; its public key is committed in
-`src-tauri/tauri.conf.json`. The private key is configured as the repository
-Actions secret `TAURI_SIGNING_PRIVATE_KEY`. Back up the private key securely:
-existing installations trust this public key, so losing its private key
-prevents signing updates they will accept. Never commit the private key.
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is optional (the initial key has no
-password). GitHub stores the secret encrypted; keep a separate secure backup.
-
-For local signed packages:
+Configure `TAURI_SIGNING_PRIVATE_KEY` and, if needed,
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as repository secrets. The matching public
+key is in `src-tauri/tauri.conf.json`. Keep a secure private-key backup;
+existing installations trust that key. For local signed builds:
 
 ```sh
 export TAURI_SIGNING_PRIVATE_KEY="$PWD/.secrets/sivro-updater.key"
@@ -164,65 +106,15 @@ export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=''
 make build
 ```
 
-`make app` builds the unbundled executable for tests without needing a signing
-key. `make build` requires the private key to generate updater artifacts.
-Use the Tauri CLI from the locked npm dependencies (2.12.1 or newer) so
-signatures include the app version. If signing artifacts by hand, pass
-`tauri signer sign --app-version X.Y.Z`.
+Use the locked Tauri CLI so signatures include the app version. Manual signing
+requires `tauri signer sign --app-version X.Y.Z`. See the
+[Tauri updater guide](https://v2.tauri.app/plugin/updater/) for details.
 
-The release workflow checks the secret and version before building. Each
-platform uploads bundles and `.sig` files. A single final job creates the
-manifest, checks the signature metadata/key ID/version, requires Linux
-x86_64, Windows x86_64 and both macOS architectures, and includes experimental
-ARM64 targets only if their signed bundles are complete. Windows entries
-preserve MSI/NSIS installer selection; both macOS architectures use the
-universal bundle. Runtime Tauri verification authenticates the downloaded
-bytes and signed version before installation. Publication fails on missing
-assets or inconsistent signing metadata.
-Published releases cannot be rebuilt in place; bump the version so existing
-manifests keep pointing to the signed bytes they were published with.
+### Release smoke checks
 
-The manifest is hosted at
-`https://github.com/MohamedElashri/sivro/releases/latest/download/latest.json`.
-It points to immutable version-tag URLs. Keep releases stable and complete;
-drafts and prereleases do not form the normal stable update channel. Before
-the first manifest is published, a check reports an error with release
-download links. 0.1.0 users must install 0.1.1 manually once.
-
-The implementation follows the [Tauri updater documentation](https://v2.tauri.app/plugin/updater/).
-
-### Appearance and menus
-
-`src/themes.css` defines light and dark semantic tokens based on
-[Catppuccin Latte and Mocha](https://github.com/catppuccin/catppuccin), with
-text accents adjusted to meet 4.5:1 contrast on their backgrounds.
-`src/theme.ts` stores `sivro-theme` (`system`, `light` or `dark`) locally and
-listens for OS changes. Theme switches do not recreate datasets or issue queries.
-
-`src/selects.ts` enhances native selects with accessible combobox/listbox
-popups while preserving their values, change events, labels and validation.
-Popups are positioned within the viewport outside scrolling containers,
-support pointer hover, keyboard navigation, typeahead, selection checkmarks,
-outside-click dismissal and Escape. Native file dialogs remain OS dialogs.
-
-Startup is idempotent and uses mutually exclusive immediate/DOMContentLoaded
-paths. Picker requests are guarded until selection, cancellation or failure
-completes. Pending-view dots compare staged search/filters to the last loaded
-query; they clear after Apply succeeds or changes are reverted. They do not
-imply that a source file has been edited or needs saving.
-
-### Update smoke checks
-
-- Verify About's version, links, keyboard focus, Escape and focus restoration.
-- Verify opening About and normal file operations work offline. An explicit
-  offline check must show a recoverable error; retry online afterward.
-- On each supported package, check a newer signed test release, cancel the
-  confirmation, then confirm installation. Verify progress, restart behavior
-  and the version after relaunch. Try a corrupt artifact/signature and check
-  that installation is refused. Use an isolated test build and manifest;
-  never publish a test update to the stable endpoint.
-- On Linux deb/rpm and development builds, check that installation is not
-  offered and release download links are available.
-- On macOS and Windows, perform the manual installer/restart checks before
-  approving the `release` environment. Automated GUI tests run on Linux;
-  mocked tests cover update consent, failures, retries and signature rejection.
+- Check About's version, file opening and basic navigation online and offline.
+- On macOS and Windows, verify installation, launch and restart before approval.
+- With an isolated update endpoint, verify consent, cancellation, signed updates
+  and rejection of invalid signatures; confirm the version after restart.
+- Linux deb/rpm and development builds should offer release links rather than
+  in-app installation. Version 0.1.0 requires a manual upgrade.

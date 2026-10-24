@@ -35,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/MohamedElashri/sivro/main/scripts/i
 
 The script picks the right package (`.deb`, `.rpm` or AppImage on Linux, the
 universal `.dmg` on macOS), verifies it against `SHA256SUMS.txt` and installs
-it. Set `SIVRO_VERSION=v0.1.1` to pin a release.
+it. Set `SIVRO_VERSION=v0.1.2` to pin a release.
 
 **Manual download:** get the package for your platform from the
 [releases page](https://github.com/MohamedElashri/sivro/releases).
@@ -73,7 +73,7 @@ it. Set `SIVRO_VERSION=v0.1.1` to pin a release.
 4. **Export** writes the current view (columns, filters and sort) to a new file.
 
 JSON files that aren't tables open as a navigable document tree.
-[Formats and behaviour](docs/formats.md) describes each reader in detail.
+[Formats and behaviour](docs/formats.md) covers supported readers and limits.
 
 ## Development
 
