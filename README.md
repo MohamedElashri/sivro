@@ -7,6 +7,16 @@
 A local, read-only desktop explorer for tabular data, built with Rust, Tauri 2
 and DuckDB.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/sivro-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/sivro-light.png">
+  <img src="docs/images/sivro-light.png" alt="Sivro exploring 5,000 fictional sales orders, with a typed schema, data grid, and region statistics and distribution bars." width="1440">
+</picture>
+<p align="center">
+  <sub>Explore your data, inspect its schema, and profile columns — all locally.<br>
+  Pictured with 5,000 fictional orders. <a href="docs/demo/sales.parquet">Try the demo dataset</a>.</sub>
+</p>
+
 - **Opens** Parquet, Arrow IPC/Feather V2, HDF5, CSV, TSV, JSON, JSON Lines,
   Excel (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) and SQLite.
 - **Exports** the current view to Parquet, Arrow IPC files/streams, HDF5, CSV,
