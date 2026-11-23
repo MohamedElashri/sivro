@@ -268,18 +268,61 @@ jobs:
           uploadUpdaterSignatures: true
           args: ${{ matrix.tauri_args }}
 
-      - name: GUI end-to-end on the built app (Linux x86_64)
+      - name: Prepare the built app and its GUI fixtures (Linux x86_64)
         if: matrix.rust_target == 'x86_64-unknown-linux-gnu'
+        env:
+          SIVRO_E2E_DIR: ${{ runner.temp }}/sivro-release-gui/fixtures
         run: |
-          sudo apt-get install -y webkit2gtk-driver xvfb
-          cargo install tauri-driver --locked
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          xvfb-run -a node tests/e2e/run.mjs --bin src-tauri/target/x86_64-unknown-linux-gnu/release/sivro
-          xvfb-run -a node tests/e2e/run.mjs --offline --bin src-tauri/target/x86_64-unknown-linux-gnu/release/sivro
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --target x86_64-unknown-linux-gnu --lib write_e2e_fixtures -- --ignored
+          install -m 755 src-tauri/target/x86_64-unknown-linux-gnu/release/sivro "$RUNNER_TEMP/sivro-release-gui/sivro"
+
+      - name: Upload the Linux GUI test inputs
+        if: matrix.rust_target == 'x86_64-unknown-linux-gnu'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sivro-linux-release-gui
+          path: ${{ runner.temp }}/sivro-release-gui
+          if-no-files-found: error
+          retention-days: 3
+
+  release-gui:
+    name: Verify the Linux release binary in WebKit
+    needs: build
+    # Keep 22.04 for binary compatibility. Run WebDriver on the same 24.04
+    # runner as PR CI, against the binary and fixtures from the release build.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v8
+        with:
+          name: sivro-linux-release-gui
+          path: ${{ runner.temp }}/sivro-release-gui
+      - name: Install WebDriver and runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libayatana-appindicator3-dev libxdo-dev librsvg2-2 webkit2gtk-driver xvfb xauth
+          cargo install tauri-driver --version 2.1.0 --locked
+          chmod +x "$RUNNER_TEMP/sivro-release-gui/sivro"
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: GUI online
+        timeout-minutes: 3
+        run: xvfb-run -a node tests/e2e/run.mjs --bin "$RUNNER_TEMP/sivro-release-gui/sivro" --fixtures "$RUNNER_TEMP/sivro-release-gui/fixtures"
+      - name: GUI offline
+        timeout-minutes: 3
+        run: xvfb-run -a node tests/e2e/run.mjs --offline --bin "$RUNNER_TEMP/sivro-release-gui/sivro" --fixtures "$RUNNER_TEMP/sivro-release-gui/fixtures"
 
   publish-release:
     name: Publish release
-    needs: [create-release, build]
+    needs: [create-release, build, release-gui]
     if: needs.create-release.outputs.release_draft == 'true'
     runs-on: ubuntu-22.04
     # Configure required reviewers for this environment: publishing waits for
