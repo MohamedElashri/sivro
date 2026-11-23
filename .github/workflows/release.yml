@@ -146,7 +146,7 @@ jobs:
           # universal macOS app (x86_64 + ARM64). ARM64 Linux/Windows are
           # experimental and cannot block or fail a release.
           - name: macOS Universal (x86_64 + ARM64)
-            runner: macos-14
+            runner: macos-15
             os: macos
             rust_target: universal-apple-darwin
             toolchain_targets: aarch64-apple-darwin,x86_64-apple-darwin
