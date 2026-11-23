@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4 - 2026-11-23
+
+- Make the optional Ko-fi tip easy to find in About and keep it visible while browsing the app information.
+- Add a Ko-fi badge to the README and use the `melashri.net/software` catalog for project links.
+
 ## 0.1.3 - 2026-11-23
 
 - Refresh About with project links and an optional Ko-fi tip link.

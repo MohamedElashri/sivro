@@ -5,7 +5,7 @@ import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { UpdateController } from "./updates";
-import { ABOUT_LINKS, renderAbout } from "./about";
+import { ABOUT_LINKS, renderAbout, tipLink } from "./about";
 import type { AppMetadata } from "./about";
 import { ThemeController } from "./theme";
 import { enhanceSelects, dismissSelect } from "./selects";
@@ -1165,6 +1165,7 @@ function renderMain(tab: DatasetTab | null): string {
               ${icon("file")}<span>${escapeHtml(baseName(p))}</span>
             </button>`).join("")}
         </div>` : ""}
+        <div class="hero-support">${tipLink("link-btn")}</div>
       </div>
     </main>`;
   }

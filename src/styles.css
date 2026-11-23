@@ -655,6 +655,15 @@ th.sorted { background: var(--selection); }
 .about-trigger { margin-right: 12px; app-region: no-drag; }
 .about-modal { width: min(560px, 94vw); max-height: 90vh; animation: none; }
 .about-modal .modal-body { gap: 16px; }
+.about-modal .modal-head { flex: 0 0 auto; gap: 8px; }
+.about-header-actions { display: flex; align-items: center; gap: 8px; }
+.about-modal .about-tip {
+  color: var(--plum-700);
+  border-color: color-mix(in srgb, var(--plum-700) 40%, var(--border-default));
+  background: color-mix(in srgb, var(--plum-700) 8%, var(--card));
+  font-weight: 650;
+}
+.about-modal .about-tip:hover { border-color: var(--plum-700); }
 .about-modal .modal-foot { justify-content: flex-start; flex-wrap: wrap; flex-shrink: 0; }
 .about-brand { display: flex; align-items: center; gap: 14px; }
 .about-brand .brand-mark { width: 48px; height: 48px; border-radius: 12px; }
@@ -666,7 +675,9 @@ th.sorted { background: var(--selection); }
 .about-details dt { color: var(--text-muted); }
 .about-details dd { margin: 0; overflow-wrap: anywhere; }
 .about-links { display: flex; flex-wrap: wrap; gap: 10px 18px; }
-.about-support { border-top: 1px solid var(--border-soft); padding-top: 12px; }
+.hero-support { margin-top: 24px; }
+.hero-support .link-btn { color: var(--text-secondary); }
+.hero-support .link-btn:hover { color: var(--text-primary); }
 .about-updates { border-top: 1px solid var(--border-soft); padding-top: 16px; display: flex; flex-direction: column; gap: 12px; }
 .about-updates h2 { margin: 0; font-size: 14px; }
 .about-updates p { margin: 0; }
