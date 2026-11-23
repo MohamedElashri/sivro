@@ -1,5 +1,7 @@
 # Sivro
 
+[![Leave a tip on Ko-fi](https://img.shields.io/badge/Ko--fi-Leave%20a%20tip-913F51?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/melashri)
+
 [![CI](https://github.com/MohamedElashri/sivro/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MohamedElashri/sivro/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/MohamedElashri/sivro?include_prereleases&sort=semver)](https://github.com/MohamedElashri/sivro/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -105,7 +107,9 @@ Windows the Makefile builds DuckDB from source automatically. See
 
 ## Support
 
-Visit the [project website](https://melashri.net/soft/sivro/) for downloads and links. [Support on Ko-fi](https://ko-fi.com/melashri) if you’d like to leave an optional tip.
+Tips are optional and help maintain the project.
+
+**[Leave a tip on Ko-fi](https://ko-fi.com/melashri)** · [Project website](https://melashri.net/software/sivro/)
 
 ## License
 
