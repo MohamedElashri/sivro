@@ -666,6 +666,7 @@ th.sorted { background: var(--selection); }
 .about-details dt { color: var(--text-muted); }
 .about-details dd { margin: 0; overflow-wrap: anywhere; }
 .about-links { display: flex; flex-wrap: wrap; gap: 10px 18px; }
+.about-support { border-top: 1px solid var(--border-soft); padding-top: 12px; }
 .about-updates { border-top: 1px solid var(--border-soft); padding-top: 16px; display: flex; flex-direction: column; gap: 12px; }
 .about-updates h2 { margin: 0; font-size: 14px; }
 .about-updates p { margin: 0; }

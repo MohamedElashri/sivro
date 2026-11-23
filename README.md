@@ -103,6 +103,10 @@ CI lints with the latest stable Rust, so run `rustup update stable` first. On
 Windows the Makefile builds DuckDB from source automatically. See
 [development](docs/development.md) for architecture, tests and releasing.
 
+## Support
+
+Visit the [project website](https://melashri.net/soft/sivro/) for downloads and links. [Support on Ko-fi](https://ko-fi.com/melashri) if you’d like to leave an optional tip.
+
 ## License
 
 [MIT](LICENSE).

@@ -3,11 +3,13 @@ import type { UpdateController } from "./updates";
 
 export const PROJECT_URL = "https://github.com/MohamedElashri/sivro";
 export const ABOUT_LINKS = {
+  website: "https://melashri.net/soft/sivro/",
   source: PROJECT_URL,
   releases: `${PROJECT_URL}/releases`,
   issues: `${PROJECT_URL}/issues`,
   author: "https://elashri.com",
   license: `${PROJECT_URL}/blob/main/LICENSE`,
+  support: "https://ko-fi.com/melashri",
 };
 export interface AppMetadata {
   version: string;
@@ -19,6 +21,8 @@ export interface AppMetadata {
 }
 const escape = (text: string) => text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const button = (action: string, text: string, primary = false) => `<button id="${action}" class="${primary ? "btn-primary" : "btn-ghost"}" data-action="${action}">${text}</button>`;
+const link = (key: keyof typeof ABOUT_LINKS, label: string) =>
+  `<button type="button" class="link-btn" data-action="about-link" data-link="${key}">${label}</button>`;
 
 export function renderAbout(meta: AppMetadata | null, metadataError: string | null, updates: UpdateController): string {
   const s = updates.state;
@@ -40,11 +44,12 @@ export function renderAbout(meta: AppMetadata | null, metadataError: string | nu
     <section class="modal about-modal" role="dialog" aria-modal="true" aria-labelledby="about-title" data-modal-card>
       <div class="modal-head"><div class="modal-title" id="about-title">About Sivro</div><button id="about-close" class="icon-btn" data-action="close-about" aria-label="Close About">${icon("close")}</button></div>
       <div class="modal-body">
-        <div class="about-brand"><div class="brand-mark">${icon("table")}</div><div><h1>Sivro</h1><p>A local, read-only data explorer</p></div></div>
-        <p class="modal-desc">Explore Parquet, CSV, TSV, JSON, JSON Lines, Excel and SQLite files on your computer.</p>
-        <dl class="about-details"><div><dt>Version</dt><dd id="about-version">${meta ? escape(meta.version) : "Loading…"}</dd></div><div><dt>Author</dt><dd>${escape(meta?.author ?? "Mohamed Elashri")}</dd></div><div><dt>Platform</dt><dd>${meta ? `${escape(meta.platform)} · ${escape(meta.arch)}` : "—"}</dd></div><div><dt>License</dt><dd>MIT · © 2026 Mohamed Elashri</dd></div></dl>
+        <div class="about-brand"><div class="brand-mark">${icon("table")}</div><div><h1>Sivro</h1><p>Version <span id="about-version">${meta ? escape(meta.version) : "loading…"}</span></p></div></div>
+        <p class="modal-desc">A local, read-only explorer for Parquet, CSV, JSON, Excel, SQLite, HDF5 and Arrow files.</p>
+        <nav class="about-links" aria-label="Project links">${link("website", "Project website")}${link("source", "Source code")}${link("issues", "Report an issue")}${link("releases", "Release notes")}</nav>
+        <dl class="about-details"><div><dt>Maintainer</dt><dd>${link("author", escape(meta?.author ?? "Mohamed Elashri"))}</dd></div><div><dt>Platform</dt><dd>${meta ? `${escape(meta.platform)} · ${escape(meta.arch)}` : "—"}</dd></div><div><dt>License</dt><dd>${link("license", "MIT license")}</dd></div></dl>
         ${metadataError ? `<p class="about-error" role="alert">Could not load application details. ${escape(metadataError)}</p>${button("reload-about", "Retry app details")}` : ""}
-        <nav class="about-links" aria-label="Project links">${Object.entries({ source: "Source code", releases: "Releases", issues: "Report an issue", author: "Author website", license: "MIT license" }).map(([key, label]) => `<button class="link-btn" data-action="about-link" data-link="${key}">${label} ↗</button>`).join("")}</nav>
+        <div class="about-support">${link("support", "Support on Ko-fi")}</div>
         <section class="about-updates" aria-labelledby="updates-title"><h2 id="updates-title">Updates</h2>
           <p class="modal-desc">Checks and installs run only when you request them. No automatic checks, downloads or updates.</p>
           <p id="update-status" role="status" aria-live="polite" aria-atomic="true">${escape(messages[s.phase])}</p>
