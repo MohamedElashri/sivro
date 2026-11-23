@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 - 2026-11-23
+
+- Refresh About with project links and an optional Ko-fi tip link.
+
 ## 0.1.2 - 2026-10-24
 
 - Added HDF5 browsing, attributes, multidimensional slices and exact-value exports.
